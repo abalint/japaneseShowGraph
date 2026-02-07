@@ -28,7 +28,7 @@
 <ul>
   <li><strong>Each node</strong> is a cluster of shows with similar vocabulary</li>
   <li><strong>Node size</strong> is proportional to the number of shows in the cluster</li>
-  <li><strong>Node color</strong> ranges from green (central/easier vocabulary) to red (peripheral/harder vocabulary)</li>
+  <li><strong>Node color</strong> ranges from green (high centrality/easier vocabulary) to red (low centrality/harder vocabulary)</li>
   <li><strong>Edges between clusters</strong> indicate vocabulary overlap; thicker edges mean more shared vocabulary</li>
   <li><strong>Spatial position</strong> is force-directed: clusters with more vocabulary overlap are pulled closer together</li>
 </ul>
@@ -60,7 +60,7 @@
   <li><strong>Header bar:</strong> Shows the cluster name, number of shows, and number of edges</li>
   <li><strong>Each node</strong> is an individual show (anime, drama, movie)</li>
   <li><strong>Node size</strong> is proportional to total tokens (subtitle data available)</li>
-  <li><strong>Node color</strong> ranges from green (central within cluster) to red (peripheral within cluster)</li>
+  <li><strong>Node color</strong> ranges from green (high centrality within cluster) to red (low centrality within cluster)</li>
   <li><strong>Edges</strong> connect shows with similar vocabulary; shows close together on screen share more vocabulary</li>
 </ul>
 
@@ -85,9 +85,9 @@
 
 <h3>The legend</h3>
 <p>
-  The bottom-left legend reads "Distance from center (ease)" &mdash; shows closer to the center of
-  the layout (green) share more vocabulary with their cluster peers and represent easier entry points.
-  Shows on the periphery (red) are more specialized.
+  The bottom-left legend reads "Centrality (vocabulary overlap)" &mdash; shows with high centrality
+  (green) share more vocabulary with their cluster peers and represent easier entry points.
+  Shows with low centrality (red) are more specialized.
 </p>
 
 <h3>Deep linking</h3>
@@ -106,7 +106,7 @@
 <h3>What you see</h3>
 <ul>
   <li><strong>All shows as nodes</strong> with ~184,000 edges</li>
-  <li><strong>Node color</strong> is based on global distance from center (green = central/easier, red = peripheral/harder)</li>
+  <li><strong>Node color</strong> is based on global centrality (green = high centrality/easier, red = low centrality/harder)</li>
   <li><strong>Node size</strong> is proportional to total tokens (relative to the global maximum)</li>
   <li><strong>Clusters</strong> appear as visible groupings since the layout is based on vocabulary similarity</li>
 </ul>
@@ -133,7 +133,7 @@
 <h3>Differences from Full Graph</h3>
 <ul>
   <li>Cluster boundaries are clearer because each cluster occupies a distinct region</li>
-  <li>Colors are per-cluster (each show is colored by its position within its own cluster) rather than globally</li>
+  <li>Colors are per-cluster (each show is colored by its centrality within its own cluster) rather than globally</li>
   <li>The layout emphasizes cluster structure rather than global similarity</li>
 </ul>
 

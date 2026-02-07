@@ -267,25 +267,24 @@
 <div class="docs-color-bar">
   <div class="legend-bar"></div>
   <div class="legend-labels">
-    <span>Peripheral / Harder</span>
-    <span>Central / Easier</span>
+    <span>Low centrality / Harder</span>
+    <span>High centrality / Easier</span>
   </div>
 </div>
 
 <p>
-  The color is based on the node's <strong>distance from the center of the layout</strong>, not its
-  centrality metric directly (though these are correlated since the layout is force-directed). The
-  distance is rank-normalized and inverted:
+  The color is based on the node's <strong>centrality score</strong> (weighted degree, rank-normalized).
+  This directly reflects how well-connected a show is to its peers:
 </p>
 <ul>
-  <li><strong class="docs-color-green">Green</strong> = close to center = the layout's force-directed algorithm placed this node centrally because it has many strong connections</li>
-  <li><strong class="docs-color-red">Red</strong> = far from center = the node was pushed to the periphery due to weaker or fewer connections</li>
+  <li><strong class="docs-color-green">Green</strong> = high centrality = many strong vocabulary connections = easier, more broadly useful vocabulary</li>
+  <li><strong class="docs-color-red">Red</strong> = low centrality = fewer or weaker connections = more specialized or harder vocabulary</li>
 </ul>
 
 <p>
-  In the cluster overview, colors reflect how central each cluster is among all clusters.
-  In per-cluster views, colors reflect how central each show is within its own cluster.
-  In the full graph view, colors reflect global position.
+  In the cluster overview, colors reflect each cluster's average global centrality (difficulty).
+  In per-cluster views, colors reflect within-cluster centrality.
+  In the full graph view, colors reflect global centrality.
 </p>
 
 <h2 id="tokens">Total Tokens</h2>

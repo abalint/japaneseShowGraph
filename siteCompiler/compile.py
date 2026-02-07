@@ -135,6 +135,28 @@ def color_by_distance_from_center(pos: dict) -> dict[str, str]:
     return colors
 
 
+def color_by_centrality(scores: dict) -> dict[str, str]:
+    """Rank-normalize centrality scores → RdYlGn colormap hex.
+
+    Higher score = green (easier), lower score = red (harder).
+    """
+    if not scores:
+        return {}
+    nodes = list(scores.keys())
+    values = np.array([scores[n] for n in nodes])
+    n = len(values)
+    ranks = values.argsort().argsort()
+    norm = np.array([ranks[i] / max(n - 1, 1) for i in range(n)])
+    colormap = cm.RdYlGn
+    colors = {}
+    for i, node in enumerate(nodes):
+        rgba = colormap(norm[i])
+        colors[node] = "#{:02x}{:02x}{:02x}".format(
+            int(rgba[0] * 255), int(rgba[1] * 255), int(rgba[2] * 255)
+        )
+    return colors
+
+
 def rgba_to_hex(r, g, b) -> str:
     return "#{:02x}{:02x}{:02x}".format(int(r * 255), int(g * 255), int(b * 255))
 
@@ -351,9 +373,7 @@ def export_fullgraph_js(
 ) -> tuple[int, int]:
     """Write fullgraph.js using the precomputed full graph layout from graph.py.
 
-    Uses the real DrL layout positions and a single global distance-from-center
-    RdYlGn gradient — same style as the per-cluster pages but across the
-    entire graph.
+    Uses the real DrL layout positions and a centrality-based RdYlGn gradient.
 
     Returns (total_nodes, total_edges).
     """
@@ -369,8 +389,16 @@ def export_fullgraph_js(
     positioned = {nid: pos for nid, pos in full_layout.items()
                   if nid in node_to_cluster}
 
-    # Global distance-from-center coloring (same as per-cluster pages)
-    colors = color_by_distance_from_center(positioned)
+    # Global centrality-based coloring
+    centrality_scores = {}
+    for nid in positioned:
+        cid = node_to_cluster[nid]
+        sg = subgraphs[cid]
+        if sg.has_node(nid):
+            centrality_scores[nid] = float(sg.nodes[nid].get("global_centrality", 0))
+        else:
+            centrality_scores[nid] = 0.0
+    colors = color_by_centrality(centrality_scores)
 
     # Global token max for sizing
     all_tokens = []
@@ -394,6 +422,8 @@ def export_fullgraph_js(
             "cluster": cid,
             "clusterName": names.get(cid, f"Cluster {cid}"),
             "episodes": int(attrs.get("episode_count", 0)),
+            "centrality": round(float(attrs.get("centrality_score", 0)), 4),
+            "globalCentrality": round(float(attrs.get("global_centrality", 0)), 4),
             "tokens": tokens,
             "color": colors.get(nid, "#888888"),
             "size": round(1.5 + 5 * (tokens / max_tok), 2),
@@ -449,8 +479,8 @@ def export_composite_js(
     """Write composite.js with composite layout of all nodes.
 
     Uses cluster-level positions as centers, offsets each node by its
-    within-cluster layout position (scaled down). Per-cluster distance-from-
-    center coloring + cluster hue legend.
+    within-cluster layout position (scaled down). Per-cluster centrality-based
+    coloring + cluster hue legend.
 
     Returns (total_nodes, total_edges).
     """
@@ -493,6 +523,8 @@ def export_composite_js(
                 "cluster": cid,
                 "clusterName": names.get(cid, f"Cluster {cid}"),
                 "episodes": int(attrs.get("episode_count", 0)),
+                "centrality": round(float(attrs.get("centrality_score", 0)), 4),
+                "globalCentrality": round(float(attrs.get("global_centrality", 0)), 4),
                 "tokens": tokens,
                 "color": node_colors.get(node_id, "#888888"),
                 "size": round(1.5 + 5 * (tokens / max_tok), 2),
@@ -1043,7 +1075,9 @@ def main() -> None:
     # Compute cluster-level layout & colors
     print("Computing cluster layout...", file=sys.stderr)
     cg_pos = compute_layout(cg, weight="weight", seed=42, k=1.5, iterations=200)
-    cg_colors = color_by_distance_from_center(cg_pos)
+    cg_colors = color_by_centrality(
+        {n: float(cg.nodes[n].get("difficulty", 0.5)) for n in cg.nodes()}
+    )
 
     # Export cluster overview data
     print("Exporting data files...", file=sys.stderr)
@@ -1058,7 +1092,9 @@ def main() -> None:
         print(f"  Cluster {cid}: {n} nodes...", file=sys.stderr)
         k = 2.0 / max(1, n ** 0.4)
         pos = compute_layout(sg, weight="weight", seed=42, k=k, iterations=100)
-        colors = color_by_distance_from_center(pos)
+        colors = color_by_centrality(
+            {nid: float(sg.nodes[nid].get("centrality_score", 0)) for nid in sg.nodes()}
+        )
         nc, ec = export_cluster_js(output_dir, cid, sg, names.get(cid, ""), pos, colors)
         cluster_stats[cid] = (nc, ec)
         cluster_layouts[cid] = pos

@@ -240,15 +240,17 @@
 <h3>Color coding</h3>
 <p>
   Node colors use the <strong>RdYlGn</strong> (Red &rarr; Yellow &rarr; Green) colormap based on
-  each node's distance from the layout center:
+  pre-computed centrality scores (weighted degree, rank-normalized):
 </p>
 <ul>
-  <li><strong class="docs-color-green">Green</strong> = close to center = more connected = easier vocabulary</li>
-  <li><strong class="docs-color-yellow">Yellow</strong> = moderate distance = intermediate</li>
-  <li><strong class="docs-color-red">Red</strong> = far from center = more specialized = harder vocabulary</li>
+  <li><strong class="docs-color-green">Green</strong> = high centrality = more connected = easier vocabulary</li>
+  <li><strong class="docs-color-yellow">Yellow</strong> = moderate centrality = intermediate</li>
+  <li><strong class="docs-color-red">Red</strong> = low centrality = more specialized = harder vocabulary</li>
 </ul>
 <p>
-  Distances are rank-normalized and inverted, so the node closest to the center gets the brightest
-  green (1.0) and the most peripheral node gets the deepest red (0.0).
+  In per-cluster views, within-cluster centrality is used. In the full graph view, global centrality
+  is used. In the cluster overview, each cluster is colored by its average global centrality
+  (difficulty). Centrality scores are rank-normalized so the most connected node gets the brightest
+  green (1.0) and the least connected node gets the deepest red (0.0).
 </p>
 {% endblock %}

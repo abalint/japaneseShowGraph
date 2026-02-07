@@ -16,11 +16,11 @@
 <div id="graph-wrapper">
   <div id="sigma-container"></div>
   <div id="legend">
-    <div class="legend-title">Distance from center (ease)</div>
+    <div class="legend-title">Centrality (vocabulary overlap)</div>
     <div class="legend-bar"></div>
     <div class="legend-labels">
-      <span>Peripheral (harder)</span>
-      <span>Central (easier)</span>
+      <span>Low centrality (harder)</span>
+      <span>High centrality (easier)</span>
     </div>
   </div>
 </div>
@@ -52,6 +52,8 @@
       cluster: n.cluster,
       clusterName: n.clusterName,
       episodes: n.episodes,
+      centrality: n.centrality,
+      globalCentrality: n.globalCentrality,
       tokens: n.tokens,
       forceLabel: false
     });
@@ -107,7 +109,9 @@
       '<div><strong>Category:</strong> ' + attrs.category + '</div>' +
       '<div><strong>Cluster:</strong> <a href="cluster/' + attrs.cluster + '.html" style="color:#c0392b">' + attrs.clusterName + '</a></div>' +
       '<div><strong>Episodes:</strong> ' + attrs.episodes + '</div>' +
-      '<div><strong>Total tokens:</strong> ' + (attrs.tokens || 0).toLocaleString() + '</div>';
+      '<div><strong>Total tokens:</strong> ' + (attrs.tokens || 0).toLocaleString() + '</div>' +
+      '<div><strong>Centrality (in-cluster):</strong> ' + ((attrs.centrality || 0) * 100).toFixed(0) + '%</div>' +
+      '<div><strong>Centrality (global):</strong> ' + ((attrs.globalCentrality || 0) * 100).toFixed(0) + '%</div>';
 
     var neighbors = getNeighborsSorted(nodeId);
     detailNeighbors.innerHTML = '';
