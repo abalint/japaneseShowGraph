@@ -1,0 +1,343 @@
+{% extends "base.html" %}
+{% block title %}Pathfinder — Japanese Show Graph{% endblock %}
+
+{% block head %}
+<script src="{{ root }}assets/graphology.umd.min.js"></script>
+<script src="{{ root }}data/search_index.js"></script>
+<script src="{{ root }}data/pathfinding.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="pathfinder-layout">
+  <div class="pathfinder-form">
+    <h1>Pathfinder</h1>
+    <p class="pathfinder-info">
+      Find the shortest vocabulary path between two shows. Shorter distance = more similar
+      vocabulary = easier transition between shows.
+    </p>
+    <div class="pf-field">
+      <label for="pf-start">Start Show</label>
+      <input type="text" id="pf-start" placeholder="Type to search..." autocomplete="off">
+      <div id="pf-start-results" class="pf-dropdown"></div>
+      <input type="hidden" id="pf-start-id">
+      <div id="pf-start-tag" class="pf-tag" style="display:none;"></div>
+    </div>
+    <div class="pf-field">
+      <label for="pf-end">End Show</label>
+      <input type="text" id="pf-end" placeholder="Type to search..." autocomplete="off">
+      <div id="pf-end-results" class="pf-dropdown"></div>
+      <input type="hidden" id="pf-end-id">
+      <div id="pf-end-tag" class="pf-tag" style="display:none;"></div>
+    </div>
+    <button id="pf-find" class="pf-button" disabled>Find Paths</button>
+  </div>
+
+  <div id="pf-results" class="pathfinder-results" style="display:none;">
+    <h2>Paths Found</h2>
+    <div id="pf-results-list"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var data = PATHFINDING_DATA;
+  var index = SEARCH_INDEX;
+
+  // Build adjacency lookup
+  var adj = data.adj;
+  var nodes = data.nodes;
+
+  // Dijkstra shortest path
+  function dijkstra(source, target) {
+    var dist = {};
+    var prev = {};
+    var visited = {};
+    dist[source] = 0;
+
+    // Simple priority queue via sorted array (sufficient for sparse graphs)
+    var queue = [[0, source]];
+
+    while (queue.length > 0) {
+      queue.sort(function(a, b) { return a[0] - b[0]; });
+      var item = queue.shift();
+      var d = item[0], u = item[1];
+
+      if (visited[u]) continue;
+      visited[u] = true;
+
+      if (u === target) break;
+
+      var neighbors = adj[u] || [];
+      for (var i = 0; i < neighbors.length; i++) {
+        var nb = String(neighbors[i][0]);
+        var w = 1.0 - neighbors[i][1]; // distance = 1 - similarity
+        var alt = d + w;
+        if (dist[nb] === undefined || alt < dist[nb]) {
+          dist[nb] = alt;
+          prev[nb] = u;
+          queue.push([alt, nb]);
+        }
+      }
+    }
+
+    if (dist[target] === undefined) return null;
+
+    var path = [];
+    var cur = target;
+    while (cur !== undefined) {
+      path.unshift(cur);
+      cur = prev[cur];
+    }
+    return { path: path, distance: dist[target] };
+  }
+
+  // Yen's K shortest paths
+  function yenKShortest(source, target, K) {
+    var result = dijkstra(source, target);
+    if (!result) return [];
+
+    var A = [result]; // confirmed shortest paths
+    var B = []; // candidate paths
+
+    for (var k = 1; k < K; k++) {
+      var prevPath = A[k - 1].path;
+
+      for (var i = 0; i < prevPath.length - 1; i++) {
+        var spurNode = prevPath[i];
+        var rootPath = prevPath.slice(0, i + 1);
+
+        // Temporarily remove edges that would retrace confirmed paths
+        var removedEdges = [];
+        for (var j = 0; j < A.length; j++) {
+          var p = A[j].path;
+          if (p.length > i && arraysEqual(p.slice(0, i + 1), rootPath)) {
+            // Remove edge from spurNode to p[i+1]
+            var from = p[i], to = p[i + 1];
+            removedEdges.push([from, to]);
+          }
+        }
+
+        // Remove root path nodes (except spur) from graph temporarily
+        var removedNodes = {};
+        for (var ri = 0; ri < i; ri++) {
+          removedNodes[rootPath[ri]] = true;
+        }
+
+        // Modified dijkstra avoiding removed edges and nodes
+        var spurResult = dijkstraExcluding(spurNode, target, removedEdges, removedNodes);
+
+        if (spurResult) {
+          var totalPath = rootPath.slice(0, -1).concat(spurResult.path);
+          var rootDist = 0;
+          for (var ri2 = 0; ri2 < rootPath.length - 1; ri2++) {
+            rootDist += edgeDist(rootPath[ri2], rootPath[ri2 + 1]);
+          }
+          var candidate = { path: totalPath, distance: rootDist + spurResult.distance };
+
+          // Check if this path is already in B
+          var isDuplicate = false;
+          for (var bi = 0; bi < B.length; bi++) {
+            if (arraysEqual(B[bi].path, candidate.path)) { isDuplicate = true; break; }
+          }
+          if (!isDuplicate) B.push(candidate);
+        }
+      }
+
+      if (B.length === 0) break;
+      B.sort(function(a, b) { return a.distance - b.distance; });
+      A.push(B.shift());
+    }
+
+    return A;
+  }
+
+  function edgeDist(u, v) {
+    var neighbors = adj[u] || [];
+    for (var i = 0; i < neighbors.length; i++) {
+      if (String(neighbors[i][0]) === v) return 1.0 - neighbors[i][1];
+    }
+    return 1.0;
+  }
+
+  function dijkstraExcluding(source, target, removedEdges, removedNodes) {
+    var dist = {};
+    var prev = {};
+    var visited = {};
+    dist[source] = 0;
+    var queue = [[0, source]];
+
+    var edgeSet = {};
+    removedEdges.forEach(function(e) {
+      edgeSet[e[0] + '>' + e[1]] = true;
+    });
+
+    while (queue.length > 0) {
+      queue.sort(function(a, b) { return a[0] - b[0]; });
+      var item = queue.shift();
+      var d = item[0], u = item[1];
+
+      if (visited[u]) continue;
+      visited[u] = true;
+      if (u === target) break;
+
+      var neighbors = adj[u] || [];
+      for (var i = 0; i < neighbors.length; i++) {
+        var nb = String(neighbors[i][0]);
+        if (removedNodes[nb]) continue;
+        if (edgeSet[u + '>' + nb]) continue;
+        var w = 1.0 - neighbors[i][1];
+        var alt = d + w;
+        if (dist[nb] === undefined || alt < dist[nb]) {
+          dist[nb] = alt;
+          prev[nb] = u;
+          queue.push([alt, nb]);
+        }
+      }
+    }
+
+    if (dist[target] === undefined) return null;
+    var path = [];
+    var cur = target;
+    while (cur !== undefined) { path.unshift(cur); cur = prev[cur]; }
+    return { path: path, distance: dist[target] };
+  }
+
+  function arraysEqual(a, b) {
+    if (a.length !== b.length) return false;
+    for (var i = 0; i < a.length; i++) { if (a[i] !== b[i]) return false; }
+    return true;
+  }
+
+  // Autocomplete wiring
+  function setupAutocomplete(inputId, resultsId, hiddenId, tagId) {
+    var input = document.getElementById(inputId);
+    var results = document.getElementById(resultsId);
+    var hidden = document.getElementById(hiddenId);
+    var tag = document.getElementById(tagId);
+
+    input.addEventListener('input', function() {
+      var q = this.value.trim().toLowerCase();
+      results.innerHTML = '';
+      hidden.value = '';
+      tag.style.display = 'none';
+      checkButton();
+      if (q.length < 2) { results.style.display = 'none'; return; }
+
+      var matches = [];
+      for (var i = 0; i < index.length; i++) {
+        if (index[i].title.toLowerCase().indexOf(q) !== -1) {
+          matches.push(index[i]);
+        }
+      }
+      matches.sort(function(a, b) {
+        var al = a.title.toLowerCase(), bl = b.title.toLowerCase();
+        var aExact = al === q, bExact = bl === q;
+        if (aExact !== bExact) return aExact ? -1 : 1;
+        var aStarts = al.indexOf(q) === 0, bStarts = bl.indexOf(q) === 0;
+        if (aStarts !== bStarts) return aStarts ? -1 : 1;
+        return a.title.length - b.title.length;
+      });
+      matches = matches.slice(0, 20);
+      if (matches.length === 0) { results.style.display = 'none'; return; }
+      results.style.display = 'block';
+      matches.forEach(function(m) {
+        var div = document.createElement('div');
+        div.className = 'pf-dropdown-item';
+        div.textContent = m.title + ' (' + m.category + ')';
+        div.addEventListener('click', function() {
+          hidden.value = m.id;
+          input.value = m.title;
+          tag.textContent = m.title + ' (Cluster ' + m.cluster + ')';
+          tag.style.display = 'inline-block';
+          results.style.display = 'none';
+          checkButton();
+        });
+        results.appendChild(div);
+      });
+    });
+
+    document.addEventListener('click', function(e) {
+      if (!input.contains(e.target) && !results.contains(e.target)) {
+        results.style.display = 'none';
+      }
+    });
+  }
+
+  var findBtn = document.getElementById('pf-find');
+
+  function checkButton() {
+    var a = document.getElementById('pf-start-id').value;
+    var b = document.getElementById('pf-end-id').value;
+    findBtn.disabled = !(a && b);
+  }
+
+  setupAutocomplete('pf-start', 'pf-start-results', 'pf-start-id', 'pf-start-tag');
+  setupAutocomplete('pf-end', 'pf-end-results', 'pf-end-id', 'pf-end-tag');
+
+  findBtn.addEventListener('click', function() {
+    var source = document.getElementById('pf-start-id').value;
+    var target = document.getElementById('pf-end-id').value;
+    if (!source || !target) return;
+
+    var resultsDiv = document.getElementById('pf-results');
+    var listDiv = document.getElementById('pf-results-list');
+
+    findBtn.textContent = 'Finding...';
+    findBtn.disabled = true;
+
+    setTimeout(function() {
+      var paths = yenKShortest(source, target, 5);
+      findBtn.textContent = 'Find Paths';
+      findBtn.disabled = false;
+
+      if (paths.length === 0) {
+        listDiv.innerHTML = '<p class="no-paths">No path found between these shows. They may be in disconnected parts of the graph.</p>';
+        resultsDiv.style.display = 'block';
+        return;
+      }
+
+      listDiv.innerHTML = '';
+      paths.forEach(function(result, idx) {
+        var card = document.createElement('div');
+        card.className = 'path-card';
+        var header = document.createElement('div');
+        header.className = 'path-header';
+        header.innerHTML = '<strong>Path ' + (idx + 1) + '</strong> &mdash; ' +
+          result.path.length + ' shows, distance: ' + result.distance.toFixed(3);
+        card.appendChild(header);
+
+        var steps = document.createElement('div');
+        steps.className = 'path-steps';
+        result.path.forEach(function(nodeId, si) {
+          var n = nodes[nodeId];
+          var step = document.createElement('span');
+          step.className = 'path-step';
+          var a = document.createElement('a');
+          a.href = 'cluster/' + n.c + '.html#show=' + nodeId;
+          a.textContent = n.t;
+          a.title = 'Cluster ' + n.c + ': ' + n.cat;
+          step.appendChild(a);
+          var badge = document.createElement('small');
+          badge.className = 'cluster-badge';
+          badge.textContent = 'C' + n.c;
+          step.appendChild(badge);
+          steps.appendChild(step);
+          if (si < result.path.length - 1) {
+            var arrow = document.createElement('span');
+            arrow.className = 'path-arrow';
+            arrow.textContent = ' \u2192 ';
+            steps.appendChild(arrow);
+          }
+        });
+        card.appendChild(steps);
+        listDiv.appendChild(card);
+      });
+
+      resultsDiv.style.display = 'block';
+    }, 10);
+  });
+})();
+</script>
+{% endblock %}

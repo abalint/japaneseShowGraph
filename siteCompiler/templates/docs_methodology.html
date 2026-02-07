@@ -1,0 +1,254 @@
+{% extends "docs_base.html" %}
+{% block title %}Methodology — Japanese Show Graph{% endblock %}
+
+{% block docs_content %}
+<h1>Methodology</h1>
+
+<p>
+  The graph is built through a four-stage pipeline. Each stage transforms the data further,
+  from raw subtitle files to the interactive visualization you see on the site.
+</p>
+
+<nav class="docs-toc">
+  <div class="docs-toc-title">On this page</div>
+  <a href="#stage-1">Stage 1: Subtitle Minification</a>
+  <a href="#stage-2">Stage 2: Morphological Parsing</a>
+  <a href="#stage-3">Stage 3: Graph Construction</a>
+  <a href="#stage-4">Stage 4: Site Compilation</a>
+</nav>
+
+<h2 id="stage-1">Stage 1: Subtitle Minification</h2>
+
+<p>
+  Raw subtitle files come in various formats (.srt, .ass, .ssa) with formatting tags,
+  timestamps, and metadata. The minifier strips all of this away to produce clean plain text
+  with one sentence per line.
+</p>
+
+<h3>What gets removed</h3>
+<ul>
+  <li><strong>SRT files:</strong> Numeric index lines, timestamp lines (<code>00:01:23,456 --&gt; 00:01:25,789</code>), HTML tags (<code>&lt;b&gt;</code>, <code>&lt;i&gt;</code>, <code>&lt;font&gt;</code>)</li>
+  <li><strong>ASS/SSA files:</strong> Override tags like <code>{\pos(960,540)}</code> and <code>{\fs38.2}</code>; the <code>\N</code> and <code>\n</code> markers are converted to actual newlines</li>
+  <li><strong>Encoding issues:</strong> The minifier detects BOM markers (UTF-8-sig, UTF-16-LE, UTF-16-BE) and falls back to UTF-8</li>
+</ul>
+
+<h3>Output</h3>
+<p>
+  One clean sentence per line, saved as <code>.txt</code>. The original subtitle archive is ~3.6 GB;
+  the minified output is ~5.3 GB (due to multi-byte encoding of Japanese text without compression).
+</p>
+
+<h2 id="stage-2">Stage 2: Morphological Parsing</h2>
+
+<p>
+  The parser uses <strong>SudachiPy</strong>, a modern Japanese morphological analyzer developed by
+  Works Applications. It breaks Japanese text into morphemes (the smallest meaningful units),
+  providing the dictionary form, part of speech, and reading for each token.
+</p>
+
+<h3>How parsing works</h3>
+<ol>
+  <li>
+    <strong>Discovery:</strong> The parser walks the minified subtitle directory looking for show
+    folders. Each show's directory name becomes its title. Shows are categorized by their parent
+    folder: <code>anime_movie</code>, <code>anime_tv</code>, <code>drama_movie</code>,
+    <code>drama_tv</code>, or <code>unsorted</code>.
+  </li>
+  <li>
+    <strong>Language filtering:</strong> Files whose names match non-Japanese language codes
+    (English, Chinese, Korean, etc.) are skipped. Lines that don't contain any Japanese characters
+    (hiragana, katakana, or kanji) are also filtered out.
+  </li>
+  <li>
+    <strong>Tokenization:</strong> Each line is fed through SudachiPy in Mode B (balanced segmentation).
+    For each token, four properties are recorded:
+    <ul>
+      <li><strong>Surface form</strong> &mdash; the text as it actually appeared</li>
+      <li><strong>Dictionary form</strong> &mdash; the base/lemma form (e.g., &#x98DF;&#x3079;&#x305F; &rarr; &#x98DF;&#x3079;&#x308B;)</li>
+      <li><strong>Part of speech</strong> &mdash; the full POS tag (e.g., &#x52D5;&#x8A5E;-&#x4E00;&#x822C;-&#x4E00;&#x6BB5;)</li>
+      <li><strong>Reading</strong> &mdash; the pronunciation in katakana</li>
+    </ul>
+  </li>
+  <li>
+    <strong>Filtering:</strong> Punctuation tokens (&#x88DC;&#x52A9;&#x8A18;&#x53F7;) and whitespace tokens (&#x7A7A;&#x767D;) are discarded.
+  </li>
+  <li>
+    <strong>Validation:</strong> A show must have at least 50 tokens and at least 10% of tokens must
+    contain kana (hiragana or katakana). The kana check distinguishes Japanese content from Chinese
+    content, which shares kanji but never uses kana.
+  </li>
+</ol>
+
+<h3>Design decision: no normalization of speech registers</h3>
+<p>
+  The parser deliberately does <em>not</em> collapse keigo (polite), literary, or dialect forms.
+  For example, &#x53EC;&#x3057;&#x4E0A;&#x304C;&#x308B; (formal "to eat") and &#x98DF;&#x3079;&#x308B; (plain "to eat")
+  remain as separate morphemes. This preserves difficulty signal: plain forms create strong edges
+  because they appear across many shows, while keigo and literary forms create weaker edges that
+  push specialized shows (period dramas, formal business settings) toward the periphery of the graph.
+</p>
+
+<h2 id="stage-3">Stage 3: Graph Construction</h2>
+
+<p>This is the core of the system. It transforms the raw morpheme counts into a similarity graph.</p>
+
+<h3>3a. Proper noun filtering</h3>
+<p>
+  Proper nouns (&#x540D;&#x8A5E;-&#x56FA;&#x6709;&#x540D;&#x8A5E;) are excluded from the similarity computation entirely.
+  Character names, place names, and other proper nouns would create false connections between shows
+  that happen to share character names but have completely different vocabulary. For example, multiple
+  unrelated shows might have a character named &#x592A;&#x90CE; (Tarou) &mdash; this shouldn't make them similar.
+  However, proper nouns are still counted toward total token counts for metadata.
+</p>
+
+<h3>3b. Quality gate</h3>
+<p>
+  Shows with fewer than 500 total tokens are removed from the graph. This is stricter than the
+  parser's 50-token minimum &mdash; the parser stores everything, but the grapher only includes shows
+  with enough text to produce meaningful similarity scores.
+</p>
+
+<h3>3c. TF-IDF transformation</h3>
+<p>
+  Raw morpheme counts are transformed into TF-IDF (Term Frequency &ndash; Inverse Document Frequency)
+  vectors. This is the key step that makes the similarity metric work.
+</p>
+
+<div class="docs-formula">
+  <div class="formula-row">
+    <span class="formula-label">Term Frequency (sublinear):</span>
+    <span class="formula-math">TF = 1 + log(count)</span>
+  </div>
+  <div class="formula-row">
+    <span class="formula-label">Inverse Document Frequency (smooth):</span>
+    <span class="formula-math">IDF = log((1 + N) / (1 + df)) + 1</span>
+  </div>
+  <div class="formula-row">
+    <span class="formula-label">Combined score:</span>
+    <span class="formula-math">TF-IDF = TF &times; IDF</span>
+  </div>
+  <div class="formula-row">
+    <span class="formula-label">Normalization:</span>
+    <span class="formula-math">The entire vector is L2-normalized to unit length</span>
+  </div>
+</div>
+
+<p>Where <em>N</em> is the total number of shows and <em>df</em> is the number of shows containing that morpheme.</p>
+
+<p><strong>Why sublinear TF?</strong> Using <code>1 + log(count)</code> instead of raw count means that
+  if a word appears 100 times in a show vs. 10 times, it doesn't get 10x the weight &mdash; it gets
+  roughly 1.4x. This prevents extremely frequent words within a single show from dominating.
+</p>
+
+<p><strong>Why IDF?</strong> Words appearing in nearly every show (like &#x3053;&#x308C;, &#x305D;&#x308C;, &#x3067;&#x3059;) get an IDF close to
+  zero, contributing almost nothing to similarity. Words appearing in only a few shows get amplified.
+  This means two shows sharing rare medical or legal vocabulary will score high, while two shows
+  sharing only common conversational words will score near zero.
+</p>
+
+<p><strong>Why L2 normalization?</strong> After normalization, each show's TF-IDF vector has unit
+  length. This means the dot product of two vectors equals their cosine similarity, and show length
+  doesn't affect the comparison &mdash; a 12-episode series and a 300-episode series are compared
+  fairly.
+</p>
+
+<h3>3d. Top-k cosine similarity</h3>
+<p>
+  For each show, the top 20 most similar other shows are identified (by cosine similarity of their
+  TF-IDF vectors), with a minimum threshold of 0.01. This uses an efficient sparse matrix operation
+  rather than computing all ~118 million possible pairs.
+</p>
+<p>
+  The resulting sparse similarity matrix is then <strong>symmetrized</strong>: if show A is in
+  show B's top-20, the reverse connection is also kept. This ensures edges are always bidirectional.
+</p>
+
+<h3>3e. Edge creation</h3>
+<p>
+  Each non-zero entry in the upper triangle of the symmetrized similarity matrix becomes an
+  undirected edge in the graph. The edge weight is the cosine similarity value (0 to 1).
+  The result is approximately 184,000 edges connecting ~10,900 shows.
+</p>
+
+<h3>3f. Layout</h3>
+<p>
+  The full graph layout uses the <strong>DrL algorithm</strong> (Distributed Recursive Layout /
+  OpenOrd), a force-directed layout designed for large graphs. It computes 2D positions for all
+  ~10,900 nodes. Coordinates are normalized to [0, 1].
+</p>
+
+<h3>3g. Community detection (clustering)</h3>
+<p>
+  The <strong>Leiden algorithm</strong> is used to detect communities in the graph. Leiden is an
+  improvement over the well-known Louvain algorithm, guaranteeing that all detected communities
+  are connected. It uses edge weights (cosine similarity) and produces 21 clusters.
+</p>
+<p>
+  These clusters are <strong>emergent vocabulary domains</strong> &mdash; they arise purely from
+  shared vocabulary patterns, not from human-assigned genre labels. However, because vocabulary
+  correlates strongly with genre/setting, the resulting clusters tend to align with intuitive
+  categories (medical dramas, samurai period pieces, school anime, etc.).
+</p>
+<p>
+  Cluster names are manually assigned after inspection, not auto-generated.
+</p>
+
+<h3>3h. Centrality computation</h3>
+<p>Two centrality scores are computed for each show:</p>
+<ul>
+  <li>
+    <strong>Within-cluster centrality:</strong> Sum of edge weights to other shows
+    <em>in the same cluster</em>. This is then rank-normalized per cluster to a 0&ndash;1 scale.
+  </li>
+  <li>
+    <strong>Global centrality:</strong> Sum of edge weights to <em>all</em> other shows
+    in the entire graph. Rank-normalized globally to 0&ndash;1.
+  </li>
+</ul>
+<p>
+  Rank normalization is used instead of min-max normalization to avoid outlier skew.
+  See the <a href="metrics.html">Metrics</a> page for detailed explanations of how to interpret these.
+</p>
+
+<h2 id="stage-4">Stage 4: Site Compilation</h2>
+
+<p>
+  The site compiler reads the graph data (GraphML files, JSON adjacency lists) and generates a
+  fully static HTML site. No server is required &mdash; the site works via <code>file://</code> protocol.
+</p>
+
+<h3>Layout computation</h3>
+<ul>
+  <li>
+    <strong>Cluster overview:</strong> A spring layout positions the 21 cluster nodes. Edge weights
+    influence positioning &mdash; clusters with more vocabulary overlap are pulled closer together.
+  </li>
+  <li>
+    <strong>Per-cluster views:</strong> Each cluster gets its own spring layout computed independently.
+  </li>
+  <li>
+    <strong>Full graph:</strong> Uses the precomputed DrL layout, then applies
+    <strong>Procrustes alignment</strong> (rotation + uniform scale + translation) to align cluster
+    centroids with their positions in the overview. This ensures spatial consistency between views.
+  </li>
+  <li>
+    <strong>Composite view:</strong> A hybrid layout that places clusters at their overview positions,
+    then offsets each show node by its within-cluster layout position.
+  </li>
+</ul>
+
+<h3>Color coding</h3>
+<p>
+  Node colors use the <strong>RdYlGn</strong> (Red &rarr; Yellow &rarr; Green) colormap based on
+  each node's distance from the layout center:
+</p>
+<ul>
+  <li><strong class="docs-color-green">Green</strong> = close to center = more connected = easier vocabulary</li>
+  <li><strong class="docs-color-yellow">Yellow</strong> = moderate distance = intermediate</li>
+  <li><strong class="docs-color-red">Red</strong> = far from center = more specialized = harder vocabulary</li>
+</ul>
+<p>
+  Distances are rank-normalized and inverted, so the node closest to the center gets the brightest
+  green (1.0) and the most peripheral node gets the deepest red (0.0).
+</p>
+{% endblock %}

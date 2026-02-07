@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="docs-layout">
+  <nav class="docs-sidebar">
+    <div class="docs-nav-title">Documentation</div>
+    <a href="{{ root }}docs/index.html" class="docs-nav-link {% if active_doc == 'overview' %}active{% endif %}">Overview</a>
+    <a href="{{ root }}docs/methodology.html" class="docs-nav-link {% if active_doc == 'methodology' %}active{% endif %}">Methodology</a>
+    <a href="{{ root }}docs/metrics.html" class="docs-nav-link {% if active_doc == 'metrics' %}active{% endif %}">Metrics &amp; Numbers</a>
+    <a href="{{ root }}docs/views.html" class="docs-nav-link {% if active_doc == 'views' %}active{% endif %}">Site Views Guide</a>
+    <a href="{{ root }}docs/database.html" class="docs-nav-link {% if active_doc == 'database' %}active{% endif %}">Database Schema</a>
+  </nav>
+  <article class="docs-content">
+    {% block docs_content %}{% endblock %}
+  </article>
+</div>
+{% endblock %}

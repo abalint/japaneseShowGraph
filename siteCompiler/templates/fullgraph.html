@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+{% block title %}Full Graph — Japanese Show Graph{% endblock %}
+
+{% block head %}
+<script src="{{ root }}assets/graphology.umd.min.js"></script>
+<script src="{{ root }}assets/sigma.min.js"></script>
+<script src="{{ root }}data/fullgraph.js"></script>
+{% endblock %}
+
+{% block content %}
+<div id="cluster-header">
+  <a href="{{ root }}index.html" class="back-btn">&larr; Overview</a>
+  <h1>Full Graph</h1>
+  <span class="cluster-stats">{{ node_count }} shows &middot; {{ edge_count }} edges &middot; {{ cluster_count }} clusters</span>
+</div>
+<div id="graph-wrapper">
+  <div id="sigma-container"></div>
+  <div id="legend">
+    <div class="legend-title">Distance from center (ease)</div>
+    <div class="legend-bar"></div>
+    <div class="legend-labels">
+      <span>Peripheral (harder)</span>
+      <span>Central (easier)</span>
+    </div>
+  </div>
+</div>
+<div id="detail-panel" class="detail-panel" style="display:none;">
+  <button id="detail-close" class="detail-close">&times;</button>
+  <h2 id="detail-title"></h2>
+  <div id="detail-meta" class="detail-meta"></div>
+  <h3>Neighbors (by similarity)</h3>
+  <ul id="detail-neighbors" class="neighbor-list"></ul>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var data = FULLGRAPH_DATA;
+  var Graph = graphology.Graph;
+  var graph = new Graph();
+
+  var nodeMap = {};
+  data.nodes.forEach(function(n) {
+    nodeMap[n.id] = n;
+    graph.addNode(n.id, {
+      x: n.x, y: n.y,
+      size: n.size,
+      color: n.color,
+      label: n.label,
+      category: n.category,
+      cluster: n.cluster,
+      clusterName: n.clusterName,
+      episodes: n.episodes,
+      tokens: n.tokens,
+      forceLabel: false
+    });
+  });
+
+  data.edges.forEach(function(e) {
+    if (!graph.hasEdge(e.source, e.target) && !graph.hasEdge(e.target, e.source)) {
+      graph.addEdge(e.source, e.target, {
+        weight: e.weight,
+        size: 0.5,
+        color: '{{ theme.edge_default }}'
+      });
+    }
+  });
+
+  var container = document.getElementById('sigma-container');
+  var detailPanel = document.getElementById('detail-panel');
+  var detailTitle = document.getElementById('detail-title');
+  var detailMeta = document.getElementById('detail-meta');
+  var detailNeighbors = document.getElementById('detail-neighbors');
+  var detailClose = document.getElementById('detail-close');
+
+  var selectedNode = null;
+  var hoveredNode = null;
+
+  var renderer = new Sigma(graph, container, {
+    renderLabels: true,
+    labelColor: { color: '#333' },
+    labelFont: 'sans-serif',
+    labelSize: 11,
+    labelRenderedSizeThreshold: 12,
+    defaultEdgeColor: '{{ theme.edge_default }}',
+    defaultEdgeType: 'line',
+    stagePadding: 30,
+    allowInvalidContainer: true
+  });
+
+  function getNeighborsSorted(nodeId) {
+    var neighbors = [];
+    graph.forEachEdge(nodeId, function(edge, attrs, src, tgt) {
+      var other = src === nodeId ? tgt : src;
+      neighbors.push({ id: other, weight: attrs.weight || 0 });
+    });
+    neighbors.sort(function(a, b) { return b.weight - a.weight; });
+    return neighbors;
+  }
+
+  function showDetail(nodeId) {
+    var attrs = graph.getNodeAttributes(nodeId);
+    selectedNode = nodeId;
+    detailTitle.textContent = attrs.label;
+    detailMeta.innerHTML =
+      '<div><strong>Category:</strong> ' + attrs.category + '</div>' +
+      '<div><strong>Cluster:</strong> <a href="cluster/' + attrs.cluster + '.html" style="color:#c0392b">' + attrs.clusterName + '</a></div>' +
+      '<div><strong>Episodes:</strong> ' + attrs.episodes + '</div>' +
+      '<div><strong>Total tokens:</strong> ' + (attrs.tokens || 0).toLocaleString() + '</div>';
+
+    var neighbors = getNeighborsSorted(nodeId);
+    detailNeighbors.innerHTML = '';
+    neighbors.slice(0, 30).forEach(function(nb) {
+      var nbAttrs = graph.getNodeAttributes(nb.id);
+      var li = document.createElement('li');
+      var a = document.createElement('a');
+      a.href = '#';
+      a.textContent = nbAttrs.label;
+      a.onclick = function(e) {
+        e.preventDefault();
+        selectAndFocus(nb.id);
+      };
+      var clBadge = document.createElement('span');
+      clBadge.className = 'cluster-badge';
+      clBadge.textContent = 'C' + nbAttrs.cluster;
+      var span = document.createElement('span');
+      span.className = 'nb-weight';
+      span.textContent = (nb.weight * 100).toFixed(1) + '%';
+      li.appendChild(a);
+      li.appendChild(clBadge);
+      li.appendChild(span);
+      detailNeighbors.appendChild(li);
+    });
+
+    detailPanel.style.display = 'block';
+    renderer.refresh();
+  }
+
+  function selectAndFocus(nodeId) {
+    selectedNode = nodeId;
+    showDetail(nodeId);
+    var attrs = graph.getNodeAttributes(nodeId);
+    var camera = renderer.getCamera();
+    camera.animate({ x: attrs.x, y: attrs.y, ratio: 0.05 }, { duration: 400 });
+  }
+
+  detailClose.addEventListener('click', function() {
+    selectedNode = null;
+    detailPanel.style.display = 'none';
+    renderer.refresh();
+  });
+
+  renderer.on('clickNode', function(e) {
+    selectAndFocus(e.node);
+  });
+
+  renderer.on('clickStage', function() {
+    selectedNode = null;
+    detailPanel.style.display = 'none';
+    renderer.refresh();
+  });
+
+  renderer.on('enterNode', function(e) {
+    hoveredNode = e.node;
+    container.style.cursor = 'pointer';
+    renderer.refresh();
+  });
+
+  renderer.on('leaveNode', function() {
+    hoveredNode = null;
+    container.style.cursor = 'default';
+    renderer.refresh();
+  });
+
+  var activeNode = function() { return hoveredNode || selectedNode; };
+
+  // Build adjacency set for fast lookup (needed for 184k edges)
+  var adjacency = {};
+  graph.forEachNode(function(node) {
+    adjacency[node] = {};
+  });
+  graph.forEachEdge(function(edge, attrs, src, tgt) {
+    adjacency[src][tgt] = true;
+    adjacency[tgt][src] = true;
+  });
+
+  renderer.setSetting('nodeReducer', function(node, attrs) {
+    var res = Object.assign({}, attrs);
+    var an = activeNode();
+    if (an) {
+      if (node === an) {
+        res.highlighted = true;
+        res.zIndex = 2;
+      } else if (adjacency[an] && adjacency[an][node]) {
+        res.zIndex = 1;
+      } else {
+        res.color = 'rgba(200,200,200,0.3)';
+        res.label = '';
+      }
+    }
+    return res;
+  });
+
+  renderer.setSetting('edgeReducer', function(edge, attrs) {
+    var res = Object.assign({}, attrs);
+    var an = activeNode();
+    if (an) {
+      var src = graph.source(edge);
+      var tgt = graph.target(edge);
+      if (src === an || tgt === an) {
+        res.color = '{{ theme.edge_focus }}';
+        res.size = 1.5;
+        res.hidden = false;
+      } else {
+        res.hidden = true;
+      }
+    }
+    return res;
+  });
+
+  // Handle #show=ID hash for deep-linking
+  function checkHash() {
+    var hash = window.location.hash;
+    var match = hash.match(/show=(\d+)/);
+    if (match) {
+      var id = match[1];
+      if (graph.hasNode(id)) {
+        setTimeout(function() { selectAndFocus(id); }, 300);
+      }
+    }
+  }
+  checkHash();
+  window.addEventListener('hashchange', checkHash);
+})();
+</script>
+{% endblock %}

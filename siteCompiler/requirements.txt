@@ -1,0 +1,4 @@
+networkx
+jinja2
+matplotlib
+scipy

@@ -1,0 +1,104 @@
+{% extends "docs_base.html" %}
+{% block title %}Documentation — Japanese Show Graph{% endblock %}
+
+{% block docs_content %}
+<h1>Japanese Show Graph Documentation</h1>
+
+<p>
+  The Japanese Show Graph is a vocabulary similarity network of ~10,900 Japanese TV shows and movies.
+  It helps Japanese language learners find content that matches their level and discover a
+  "path of least resistance" from easier to harder material within vocabulary domains.
+</p>
+
+<h2>How It Works (Summary)</h2>
+
+<p>
+  The system analyzes subtitle files from thousands of Japanese shows. Each show's subtitles are
+  tokenized into individual words (morphemes) using a Japanese morphological analyzer. The vocabulary
+  profile of each show is then compared against every other show using a statistical technique called
+  TF-IDF, which emphasizes <em>distinctive</em> vocabulary rather than common words.
+</p>
+<p>
+  Two shows are connected in the graph if they share a significant amount of distinctive vocabulary.
+  The strength of the connection reflects how much specialized vocabulary they have in common.
+  Shows are then grouped into clusters using community detection, producing emergent vocabulary
+  domains like "Medical Drama," "Samurai Period Drama," or "School Life Anime."
+</p>
+
+<h2>Documentation Sections</h2>
+
+<div class="docs-card-grid">
+  <a href="methodology.html" class="docs-card">
+    <h3>Methodology</h3>
+    <p>
+      The full data pipeline: how subtitles are processed, how words are extracted,
+      how similarity is computed, how the graph is built, and how clusters are detected.
+    </p>
+  </a>
+
+  <a href="metrics.html" class="docs-card">
+    <h3>Metrics &amp; Numbers</h3>
+    <p>
+      What every number on the site means: centrality percentages, similarity percentages,
+      cluster difficulty, edge weight, node size, color coding, and pathfinder distances.
+    </p>
+  </a>
+
+  <a href="views.html" class="docs-card">
+    <h3>Site Views Guide</h3>
+    <p>
+      A walkthrough of each page on the site: Cluster Overview, per-cluster views,
+      Full Graph, Composite view, Pathfinder, and the global search feature.
+    </p>
+  </a>
+
+  <a href="database.html" class="docs-card">
+    <h3>Database Schema</h3>
+    <p>
+      The SQLite database layout: tables, columns, relationships, and how the raw
+      data is stored before being transformed into the graph.
+    </p>
+  </a>
+</div>
+
+<h2>Key Concepts</h2>
+
+<dl class="docs-definitions">
+  <dt>Morpheme</dt>
+  <dd>
+    The smallest meaningful unit in Japanese. The analyzer breaks sentences like
+    &#x300C;&#x98DF;&#x3079;&#x305F;&#x304F;&#x306A;&#x3044;&#x300D; into individual morphemes:
+    &#x98DF;&#x3079;&#x308B; (to eat), &#x305F;&#x3044; (want), &#x306A;&#x3044; (not).
+    Each show's vocabulary is the set of all morphemes found in its subtitles.
+  </dd>
+
+  <dt>TF-IDF</dt>
+  <dd>
+    Term Frequency &ndash; Inverse Document Frequency. A weighting scheme that makes common words
+    (like &#x3053;&#x308C;, &#x305D;&#x308C;, &#x3067;&#x3059;) count for almost nothing, while
+    rare or specialized words (like medical terminology or samurai-era speech) count for a lot.
+    This is what makes the similarity metric meaningful.
+  </dd>
+
+  <dt>Cosine Similarity</dt>
+  <dd>
+    A measure of how similar two vocabulary profiles are, ranging from 0 (completely different)
+    to 1 (identical). It compares the <em>direction</em> of two TF-IDF vectors rather than their
+    magnitude, so it works regardless of how long a show is.
+  </dd>
+
+  <dt>Cluster</dt>
+  <dd>
+    A group of shows detected by the Leiden community detection algorithm. Clusters emerge from
+    vocabulary patterns &mdash; they are <em>not</em> based on human-assigned genres. Shows within
+    a cluster share more vocabulary with each other than with shows outside the cluster.
+  </dd>
+
+  <dt>Centrality</dt>
+  <dd>
+    How well-connected a show is to others. Higher centrality means the show shares vocabulary
+    with many other shows &mdash; making it a good entry point because the vocabulary you learn
+    will transfer widely. Lower centrality means more specialized or isolated vocabulary.
+  </dd>
+</dl>
+{% endblock %}

@@ -1,0 +1,192 @@
+{% extends "docs_base.html" %}
+{% block title %}Site Views Guide — Japanese Show Graph{% endblock %}
+
+{% block docs_content %}
+<h1>Site Views Guide</h1>
+
+<p>
+  This page walks through each view on the site, explaining what you see and how to interact with it.
+</p>
+
+<nav class="docs-toc">
+  <div class="docs-toc-title">On this page</div>
+  <a href="#overview">Cluster Overview</a>
+  <a href="#cluster">Per-Cluster View</a>
+  <a href="#fullgraph">Full Graph</a>
+  <a href="#composite">Composite View</a>
+  <a href="#pathfinder">Pathfinder</a>
+  <a href="#search">Global Search</a>
+</nav>
+
+<h2 id="overview">Cluster Overview (Home Page)</h2>
+
+<p>
+  The landing page shows all 21 vocabulary clusters as nodes in a force-directed graph.
+</p>
+
+<h3>What you see</h3>
+<ul>
+  <li><strong>Each node</strong> is a cluster of shows with similar vocabulary</li>
+  <li><strong>Node size</strong> is proportional to the number of shows in the cluster</li>
+  <li><strong>Node color</strong> ranges from green (central/easier vocabulary) to red (peripheral/harder vocabulary)</li>
+  <li><strong>Edges between clusters</strong> indicate vocabulary overlap; thicker edges mean more shared vocabulary</li>
+  <li><strong>Spatial position</strong> is force-directed: clusters with more vocabulary overlap are pulled closer together</li>
+</ul>
+
+<h3>Interactions</h3>
+<ul>
+  <li><strong>Hover over a cluster:</strong> Shows a tooltip with the cluster name, number of shows, average difficulty percentage, and top 3 shows. Non-neighbor clusters are dimmed.</li>
+  <li><strong>Click a cluster:</strong> Navigates to the detailed per-cluster view for that cluster.</li>
+  <li><strong>Scroll:</strong> Zoom in/out.</li>
+  <li><strong>Click and drag background:</strong> Pan the view.</li>
+</ul>
+
+<h3>The legend</h3>
+<p>
+  The bottom-left legend reads "Difficulty (vocabulary overlap)" with a red-to-green gradient.
+  The left side (red, "Harder") represents clusters with more specialized vocabulary.
+  The right side (green, "Easier") represents clusters with more broadly-shared vocabulary.
+</p>
+
+<h2 id="cluster">Per-Cluster View</h2>
+
+<p>
+  Clicking a cluster on the overview brings you here. This view shows all individual shows within
+  one cluster, arranged by vocabulary similarity.
+</p>
+
+<h3>What you see</h3>
+<ul>
+  <li><strong>Header bar:</strong> Shows the cluster name, number of shows, and number of edges</li>
+  <li><strong>Each node</strong> is an individual show (anime, drama, movie)</li>
+  <li><strong>Node size</strong> is proportional to total tokens (subtitle data available)</li>
+  <li><strong>Node color</strong> ranges from green (central within cluster) to red (peripheral within cluster)</li>
+  <li><strong>Edges</strong> connect shows with similar vocabulary; shows close together on screen share more vocabulary</li>
+</ul>
+
+<h3>Interactions</h3>
+<ul>
+  <li><strong>Hover over a show:</strong> Highlights that show and its direct neighbors. All other nodes and edges are dimmed.</li>
+  <li>
+    <strong>Click a show:</strong> Opens the <strong>detail panel</strong> on the right side showing:
+    <ul>
+      <li><strong>Category:</strong> anime_movie, anime_tv, drama_movie, drama_tv, or unsorted</li>
+      <li><strong>Episodes:</strong> Number of subtitle files processed</li>
+      <li><strong>Total tokens:</strong> Number of morphemes extracted</li>
+      <li><strong>Centrality (in-cluster):</strong> How well-connected this show is within its cluster (0&ndash;100%). See <a href="metrics.html#centrality-cluster">Metrics</a></li>
+      <li><strong>Centrality (global):</strong> How well-connected this show is across the entire graph (0&ndash;100%). See <a href="metrics.html#centrality-global">Metrics</a></li>
+      <li><strong>Neighbors:</strong> Up to 30 most similar shows, each with a <a href="metrics.html#similarity">similarity percentage</a></li>
+    </ul>
+  </li>
+  <li><strong>Click a neighbor name:</strong> Navigates to that show in the graph (camera pans to it and its detail panel opens).</li>
+  <li><strong>Click the &times; button:</strong> Closes the detail panel.</li>
+  <li><strong>Click empty space:</strong> Deselects the current show and closes the detail panel.</li>
+</ul>
+
+<h3>The legend</h3>
+<p>
+  The bottom-left legend reads "Distance from center (ease)" &mdash; shows closer to the center of
+  the layout (green) share more vocabulary with their cluster peers and represent easier entry points.
+  Shows on the periphery (red) are more specialized.
+</p>
+
+<h3>Deep linking</h3>
+<p>
+  URLs like <code>cluster/3.html#show=1234</code> will automatically select and zoom to show
+  ID 1234. This is how the global search and pathfinder link to specific shows.
+</p>
+
+<h2 id="fullgraph">Full Graph</h2>
+
+<p>
+  This view shows all ~10,900 shows in a single visualization using the DrL large-graph layout
+  algorithm, aligned to be spatially consistent with the cluster overview.
+</p>
+
+<h3>What you see</h3>
+<ul>
+  <li><strong>All shows as nodes</strong> with ~184,000 edges</li>
+  <li><strong>Node color</strong> is based on global distance from center (green = central/easier, red = peripheral/harder)</li>
+  <li><strong>Node size</strong> is proportional to total tokens (relative to the global maximum)</li>
+  <li><strong>Clusters</strong> appear as visible groupings since the layout is based on vocabulary similarity</li>
+</ul>
+
+<h3>Interactions</h3>
+<p>Same as the per-cluster view: hover to highlight neighbors, click to open detail panel. The detail
+  panel includes a link to the show's cluster page. Neighbor entries show a cluster badge (e.g.
+  <span class="cluster-badge-inline">C5</span>) to indicate which cluster each neighbor belongs to.</p>
+
+<h3>Performance</h3>
+<p>
+  This view uses WebGL rendering (Sigma.js) and an optimized adjacency hash set to handle the large
+  graph. On slower devices, zoom in to reduce the number of visible nodes.
+</p>
+
+<h2 id="composite">Composite View</h2>
+
+<p>
+  A hybrid visualization that combines the cluster-level overview with individual show positions.
+  Clusters are placed at their overview positions, then each show is offset by its within-cluster
+  layout position.
+</p>
+
+<h3>Differences from Full Graph</h3>
+<ul>
+  <li>Cluster boundaries are clearer because each cluster occupies a distinct region</li>
+  <li>Colors are per-cluster (each show is colored by its position within its own cluster) rather than globally</li>
+  <li>The layout emphasizes cluster structure rather than global similarity</li>
+</ul>
+
+<h2 id="pathfinder">Pathfinder</h2>
+
+<p>
+  The pathfinder helps you find the shortest vocabulary path between any two shows. This is useful
+  for planning a learning progression from one show to another.
+</p>
+
+<h3>How to use it</h3>
+<ol>
+  <li>Type in the <strong>Start Show</strong> field and select a show from the dropdown</li>
+  <li>Type in the <strong>End Show</strong> field and select a show from the dropdown</li>
+  <li>Click <strong>Find Paths</strong></li>
+</ol>
+
+<h3>Understanding the results</h3>
+<p>
+  The pathfinder returns up to <strong>5 alternative paths</strong> between the two shows, sorted
+  by total distance (shortest first). Each path shows:
+</p>
+<ul>
+  <li><strong>Path number</strong> (1 through 5)</li>
+  <li><strong>Number of shows</strong> in the path</li>
+  <li><strong>Total distance:</strong> Sum of <code>(1 &minus; similarity)</code> along all edges in the path. Lower = better. See <a href="metrics.html#path-distance">Metrics</a></li>
+  <li><strong>The path itself:</strong> Each show as a clickable link with a cluster badge. Click to go to that show's cluster page.</li>
+</ul>
+
+<h3>Algorithm</h3>
+<p>
+  Paths are computed using <strong>Yen's K-shortest paths algorithm</strong>, which finds the K
+  shortest (by total edge distance) simple paths between two nodes. Internally it uses Dijkstra's
+  algorithm with edge cost = <code>1 &minus; cosine_similarity</code>.
+</p>
+<p>
+  If no path exists (the two shows are in completely disconnected parts of the graph), a message
+  is displayed instead.
+</p>
+
+<h2 id="search">Global Search</h2>
+
+<p>
+  The search box in the top-right corner of every page lets you search for any show by name.
+</p>
+
+<h3>How it works</h3>
+<ul>
+  <li>Type at least 2 characters to trigger search</li>
+  <li>Matches by substring (case-insensitive)</li>
+  <li>Results are sorted by: exact match &gt; starts-with &gt; shortest title</li>
+  <li>Up to 30 results are shown</li>
+  <li>Each result shows the title, cluster number, and category</li>
+  <li>Clicking a result navigates to that show's cluster page with the show pre-selected</li>
+</ul>
+{% endblock %}

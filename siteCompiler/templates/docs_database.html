@@ -1,0 +1,235 @@
+{% extends "docs_base.html" %}
+{% block title %}Database Schema — Japanese Show Graph{% endblock %}
+
+{% block docs_content %}
+<h1>Database Schema</h1>
+
+<p>
+  The parsed subtitle data is stored in a SQLite database before being transformed into the graph.
+  The database has three tables connected in a standard many-to-many relationship.
+</p>
+
+<nav class="docs-toc">
+  <div class="docs-toc-title">On this page</div>
+  <a href="#overview">Overview</a>
+  <a href="#shows">shows</a>
+  <a href="#morphemes">morphemes</a>
+  <a href="#show-morphemes">show_morphemes</a>
+  <a href="#relationships">Relationships</a>
+  <a href="#scale">Scale</a>
+</nav>
+
+<h2 id="overview">Overview</h2>
+
+<div class="docs-schema-diagram">
+  <div class="schema-table">
+    <div class="schema-table-name">shows</div>
+    <div class="schema-columns">
+      <div class="schema-col"><span class="schema-pk">PK</span> id</div>
+      <div class="schema-col">title</div>
+      <div class="schema-col">category</div>
+      <div class="schema-col">episode_count</div>
+    </div>
+  </div>
+  <div class="schema-arrow">&larr; show_id</div>
+  <div class="schema-table">
+    <div class="schema-table-name">show_morphemes</div>
+    <div class="schema-columns">
+      <div class="schema-col"><span class="schema-pk">PK</span><span class="schema-fk">FK</span> show_id</div>
+      <div class="schema-col"><span class="schema-pk">PK</span><span class="schema-fk">FK</span> morpheme_id</div>
+      <div class="schema-col">count</div>
+    </div>
+  </div>
+  <div class="schema-arrow">morpheme_id &rarr;</div>
+  <div class="schema-table">
+    <div class="schema-table-name">morphemes</div>
+    <div class="schema-columns">
+      <div class="schema-col"><span class="schema-pk">PK</span> id</div>
+      <div class="schema-col">surface_form</div>
+      <div class="schema-col">dictionary_form</div>
+      <div class="schema-col">part_of_speech</div>
+      <div class="schema-col">reading</div>
+    </div>
+  </div>
+</div>
+
+<h2 id="shows">shows</h2>
+
+<p>One row per show (anime, drama, or movie).</p>
+
+<table class="docs-table">
+  <thead>
+    <tr>
+      <th>Column</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>id</code></td>
+      <td>INTEGER PRIMARY KEY</td>
+      <td>Auto-incrementing unique identifier</td>
+    </tr>
+    <tr>
+      <td><code>title</code></td>
+      <td>TEXT NOT NULL</td>
+      <td>Show title (derived from the subtitle directory name)</td>
+    </tr>
+    <tr>
+      <td><code>category</code></td>
+      <td>TEXT</td>
+      <td>One of: <code>anime_movie</code>, <code>anime_tv</code>, <code>drama_movie</code>, <code>drama_tv</code>, <code>unsorted</code></td>
+    </tr>
+    <tr>
+      <td><code>episode_count</code></td>
+      <td>INTEGER</td>
+      <td>Number of subtitle files processed for this show</td>
+    </tr>
+  </tbody>
+</table>
+
+<p><strong>Unique constraint:</strong> <code>(title, category)</code> &mdash; a show is uniquely identified by its name and category.</p>
+
+<h2 id="morphemes">morphemes</h2>
+
+<p>One row per unique morpheme (word form). A morpheme is uniquely identified by the combination of all four text fields.</p>
+
+<table class="docs-table">
+  <thead>
+    <tr>
+      <th>Column</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>id</code></td>
+      <td>INTEGER PRIMARY KEY</td>
+      <td>Auto-incrementing unique identifier</td>
+    </tr>
+    <tr>
+      <td><code>surface_form</code></td>
+      <td>TEXT NOT NULL</td>
+      <td>The text as it appeared in the subtitle (e.g., &#x98DF;&#x3079;&#x305F;)</td>
+    </tr>
+    <tr>
+      <td><code>dictionary_form</code></td>
+      <td>TEXT NOT NULL</td>
+      <td>The base/lemma form (e.g., &#x98DF;&#x3079;&#x308B;)</td>
+    </tr>
+    <tr>
+      <td><code>part_of_speech</code></td>
+      <td>TEXT NOT NULL</td>
+      <td>Full POS tag, hyphen-joined (e.g., &#x52D5;&#x8A5E;-&#x4E00;&#x822C;-&#x4E00;&#x6BB5;)</td>
+    </tr>
+    <tr>
+      <td><code>reading</code></td>
+      <td>TEXT</td>
+      <td>Pronunciation in katakana (e.g., &#x30BF;&#x30D9;&#x30BF;). May be NULL.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p><strong>Unique constraint:</strong> <code>(surface_form, dictionary_form, part_of_speech, reading)</code></p>
+
+<p>
+  This means the same surface form can appear multiple times if it has different dictionary forms or
+  POS tags. For example, &#x306F;&#x308B; could be a verb (&#x6625;, spring) or a proper noun &mdash; these would be
+  separate morpheme entries.
+</p>
+
+<h2 id="show-morphemes">show_morphemes</h2>
+
+<p>Junction table recording how many times each morpheme appears in each show.</p>
+
+<table class="docs-table">
+  <thead>
+    <tr>
+      <th>Column</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>show_id</code></td>
+      <td>INTEGER NOT NULL</td>
+      <td>Foreign key to <code>shows.id</code></td>
+    </tr>
+    <tr>
+      <td><code>morpheme_id</code></td>
+      <td>INTEGER NOT NULL</td>
+      <td>Foreign key to <code>morphemes.id</code></td>
+    </tr>
+    <tr>
+      <td><code>count</code></td>
+      <td>INTEGER NOT NULL</td>
+      <td>How many times this morpheme appeared in this show's subtitles</td>
+    </tr>
+  </tbody>
+</table>
+
+<p><strong>Primary key:</strong> <code>(show_id, morpheme_id)</code></p>
+<p><strong>Index:</strong> <code>idx_show_morphemes_morpheme</code> on <code>morpheme_id</code> for efficient reverse lookups (finding which shows contain a given morpheme).</p>
+
+<h2 id="relationships">Relationships</h2>
+
+<p>
+  The three tables form a standard <strong>many-to-many relationship</strong> through the
+  <code>show_morphemes</code> junction table:
+</p>
+
+<ul>
+  <li>One show has many morphemes (with varying counts)</li>
+  <li>One morpheme appears in many shows (with varying counts)</li>
+  <li>The <code>count</code> field on the junction table is the raw frequency that feeds into TF-IDF</li>
+</ul>
+
+<p>
+  The grapher reads this structure by building a sparse <em>show &times; morpheme</em> count matrix
+  directly from the <code>show_morphemes</code> table, then applies TF-IDF transformation.
+</p>
+
+<h2 id="scale">Scale</h2>
+
+<table class="docs-table">
+  <thead>
+    <tr>
+      <th>Metric</th>
+      <th>Count</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Shows in database</td>
+      <td>~10,900</td>
+    </tr>
+    <tr>
+      <td>Unique morphemes</td>
+      <td>~909,000</td>
+    </tr>
+    <tr>
+      <td>Non-zero entries in count matrix</td>
+      <td>~38.7 million</td>
+    </tr>
+    <tr>
+      <td>Proper noun morphemes (excluded from similarity)</td>
+      <td>~142,000</td>
+    </tr>
+    <tr>
+      <td>Shows after quality filtering (in graph)</td>
+      <td>~10,888</td>
+    </tr>
+    <tr>
+      <td>Edges in final graph</td>
+      <td>~184,000</td>
+    </tr>
+    <tr>
+      <td>Detected clusters</td>
+      <td>21</td>
+    </tr>
+  </tbody>
+</table>
+{% endblock %}

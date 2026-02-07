@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}Japanese Show Graph{% endblock %}</title>
+<link rel="stylesheet" href="{{ root }}assets/style.css">
+{% block head %}{% endblock %}
+</head>
+<body>
+<header id="site-header">
+  <div class="header-left">
+    <a href="{{ root }}index.html" class="site-title">Japanese Show Graph</a>
+    <nav>
+      <a href="{{ root }}index.html">Overview</a>
+      <a href="{{ root }}fullgraph.html">Full Graph</a>
+      <a href="{{ root }}composite.html">Composite</a>
+      <a href="{{ root }}pathfinder.html">Pathfinder</a>
+      <a href="{{ root }}docs/index.html">Docs</a>
+    </nav>
+  </div>
+  <div class="header-right">
+    <div class="search-container">
+      <input type="text" id="global-search" placeholder="Search shows..." autocomplete="off">
+      <div id="search-results" class="search-dropdown"></div>
+    </div>
+  </div>
+</header>
+<main id="content">
+{% block content %}{% endblock %}
+</main>
+<script src="{{ root }}data/search_index.js"></script>
+{% block scripts %}{% endblock %}
+<script>
+(function() {
+  var input = document.getElementById('global-search');
+  var dropdown = document.getElementById('search-results');
+  if (!input || typeof SEARCH_INDEX === 'undefined') return;
+
+  input.addEventListener('input', function() {
+    var q = this.value.trim().toLowerCase();
+    dropdown.innerHTML = '';
+    if (q.length < 2) { dropdown.style.display = 'none'; return; }
+    var matches = [];
+    for (var i = 0; i < SEARCH_INDEX.length; i++) {
+      var t = SEARCH_INDEX[i].title.toLowerCase();
+      if (t.indexOf(q) !== -1) {
+        matches.push(SEARCH_INDEX[i]);
+      }
+    }
+    matches.sort(function(a, b) {
+      var al = a.title.toLowerCase(), bl = b.title.toLowerCase();
+      var aExact = al === q, bExact = bl === q;
+      if (aExact !== bExact) return aExact ? -1 : 1;
+      var aStarts = al.indexOf(q) === 0, bStarts = bl.indexOf(q) === 0;
+      if (aStarts !== bStarts) return aStarts ? -1 : 1;
+      return a.title.length - b.title.length;
+    });
+    matches = matches.slice(0, 30);
+    if (matches.length === 0) { dropdown.style.display = 'none'; return; }
+    dropdown.style.display = 'block';
+    matches.forEach(function(m) {
+      var a = document.createElement('a');
+      a.href = '{{ root }}cluster/' + m.cluster + '.html#show=' + m.id;
+      a.className = 'search-item';
+      a.innerHTML = '<span class="search-title">' + m.title + '</span>' +
+        '<span class="search-meta">Cluster ' + m.cluster + ' &middot; ' + m.category + '</span>';
+      dropdown.appendChild(a);
+    });
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.style.display = 'none';
+    }
+  });
+})();
+</script>
+</body>
+</html>

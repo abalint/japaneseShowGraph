@@ -1,0 +1,321 @@
+{% extends "docs_base.html" %}
+{% block title %}Metrics &amp; Numbers — Japanese Show Graph{% endblock %}
+
+{% block docs_content %}
+<h1>Metrics &amp; Numbers</h1>
+
+<p>
+  This page explains every number, percentage, and visual indicator you see on the site.
+</p>
+
+<nav class="docs-toc">
+  <div class="docs-toc-title">On this page</div>
+  <a href="#similarity">Similarity Percentage</a>
+  <a href="#centrality-cluster">Centrality (In-Cluster)</a>
+  <a href="#centrality-global">Centrality (Global)</a>
+  <a href="#difficulty">Cluster Difficulty</a>
+  <a href="#edge-weight">Edge Weight &amp; Distance</a>
+  <a href="#path-distance">Pathfinder Distance</a>
+  <a href="#node-size">Node Size</a>
+  <a href="#node-color">Node Color</a>
+  <a href="#tokens">Total Tokens</a>
+  <a href="#episodes">Episode Count</a>
+</nav>
+
+<h2 id="similarity">Similarity Percentage (Neighbors View)</h2>
+
+<div class="docs-metric-card">
+  <div class="docs-metric-example">23.5%</div>
+  <p>Shown next to each neighbor in the detail panel.</p>
+</div>
+
+<p>
+  When you click a show and see its neighbors listed on the right, each neighbor has a percentage
+  next to it. This is the <strong>cosine similarity</strong> between the two shows' TF-IDF
+  vocabulary profiles, multiplied by 100.
+</p>
+
+<ul>
+  <li><strong>Higher percentage</strong> = more shared distinctive vocabulary = more similar shows</li>
+  <li><strong>Lower percentage</strong> = less vocabulary overlap = more different shows</li>
+</ul>
+
+<p>
+  A value of 23.5% does <em>not</em> mean they share 23.5% of their words. It means the cosine of
+  the angle between their TF-IDF vectors is 0.235. In practice:
+</p>
+<ul>
+  <li><strong>Above 20%</strong> &mdash; Very strong similarity. These shows likely share substantial domain-specific vocabulary (same franchise, sequel, very similar genre).</li>
+  <li><strong>10&ndash;20%</strong> &mdash; Strong similarity. Clear vocabulary overlap, typically same genre or setting.</li>
+  <li><strong>5&ndash;10%</strong> &mdash; Moderate similarity. Some shared vocabulary themes.</li>
+  <li><strong>1&ndash;5%</strong> &mdash; Weak but detectable similarity. Edge of meaningful connection.</li>
+</ul>
+
+<h2 id="centrality-cluster">Centrality (In-Cluster)</h2>
+
+<div class="docs-metric-card">
+  <div class="docs-metric-example">85%</div>
+  <p>Shown in the detail panel when clicking a show inside a cluster view.</p>
+</div>
+
+<p>
+  In-cluster centrality measures how well-connected a show is to other shows <em>within its own
+  cluster</em>. It is computed as:
+</p>
+<ol>
+  <li>Sum of all edge weights (cosine similarities) from this show to other shows in the same cluster</li>
+  <li>Rank-normalize within the cluster to a 0&ndash;1 scale, then display as a percentage</li>
+</ol>
+
+<p><strong>What it tells you:</strong></p>
+<ul>
+  <li>
+    <strong>High centrality (e.g. 85%)</strong> &mdash; This show shares vocabulary with many shows in
+    its cluster. It's a good <strong>entry point</strong> for the cluster because the vocabulary you
+    learn will transfer to many other shows in the same domain.
+  </li>
+  <li>
+    <strong>Low centrality (e.g. 15%)</strong> &mdash; This show uses more unique or specialized vocabulary
+    even within its cluster. It might be on the boundary between this cluster and another, or it might
+    represent a niche sub-genre.
+  </li>
+</ul>
+
+<p>
+  Rank normalization means the show with the highest weighted degree in the cluster gets 100%
+  and the lowest gets 0%, with others spread evenly between. This avoids skew from outliers.
+</p>
+
+<h2 id="centrality-global">Centrality (Global)</h2>
+
+<div class="docs-metric-card">
+  <div class="docs-metric-example">72%</div>
+  <p>Shown in the detail panel when clicking a show inside a cluster view.</p>
+</div>
+
+<p>
+  Global centrality measures how well-connected a show is to <em>all other shows in the entire
+  graph</em>, not just its own cluster. It is computed as:
+</p>
+<ol>
+  <li>Sum of all edge weights from this show to every other show it's connected to, across all clusters</li>
+  <li>Rank-normalize globally to a 0&ndash;1 scale, then display as a percentage</li>
+</ol>
+
+<p><strong>What it tells you:</strong></p>
+<ul>
+  <li>
+    <strong>High global centrality</strong> &mdash; This show uses vocabulary common across many genres
+    and domains. It's the "easiest" type of content because the vocabulary transfers broadly.
+    Typical examples: slice-of-life anime, modern romance dramas.
+  </li>
+  <li>
+    <strong>Low global centrality</strong> &mdash; This show uses highly specialized vocabulary that
+    doesn't appear in many other shows. Examples: period dramas with archaic Japanese,
+    medical dramas with technical terminology, shows with heavy dialect.
+  </li>
+</ul>
+
+<p>
+  Global centrality is also used to compute <a href="#difficulty">cluster difficulty</a>.
+</p>
+
+<h2 id="difficulty">Cluster Difficulty (Avg Difficulty)</h2>
+
+<div class="docs-metric-card">
+  <div class="docs-metric-example">Avg difficulty: 51%</div>
+  <p>Shown in the cluster overview tooltip when hovering over a cluster node.</p>
+</div>
+
+<p>
+  Cluster difficulty is the <strong>average global centrality</strong> of all shows in the cluster.
+</p>
+
+<p>
+  <strong>Important:</strong> Despite the name "difficulty," a <em>higher</em> percentage actually
+  means the cluster is <em>easier</em> (more globally connected vocabulary). A <em>lower</em>
+  percentage means the cluster is <em>harder</em> (more specialized vocabulary). This is because
+  it directly reflects centrality, where higher = more connected = easier.
+</p>
+
+<ul>
+  <li><strong>High difficulty % (e.g. 70%)</strong> &mdash; Easier cluster. Shows here use widely-shared vocabulary.</li>
+  <li><strong>Low difficulty % (e.g. 28%)</strong> &mdash; Harder cluster. Shows here use specialized or rare vocabulary.</li>
+</ul>
+
+<h2 id="edge-weight">Edge Weight &amp; Distance</h2>
+
+<p>Edges in the graph carry two related values:</p>
+
+<table class="docs-table">
+  <thead>
+    <tr>
+      <th>Property</th>
+      <th>Formula</th>
+      <th>Range</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Weight</td>
+      <td>Cosine similarity</td>
+      <td>0 to 1</td>
+      <td>Higher = more similar vocabulary</td>
+    </tr>
+    <tr>
+      <td>Distance</td>
+      <td>1 &minus; weight</td>
+      <td>0 to 1</td>
+      <td>Lower = more similar = "closer"</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  <strong>Weight</strong> is used for display (the neighbor similarity percentage is
+  <code>weight &times; 100</code>) and for graph layout (spring layout pulls high-weight edges closer).
+</p>
+<p>
+  <strong>Distance</strong> is used for pathfinding (Dijkstra's algorithm finds the path with the
+  lowest total distance).
+</p>
+
+<h3>Why are two shows connected?</h3>
+<p>
+  Two shows have an edge between them if one appears in the other's top-20 most similar shows
+  (by cosine similarity of TF-IDF vectors, excluding proper nouns), with a minimum similarity
+  threshold of 0.01. The connection is always bidirectional: if A is in B's top-20, B is
+  connected to A even if A's top-20 doesn't include B.
+</p>
+
+<h3>Cluster-level edges</h3>
+<p>
+  In the cluster overview, edges between cluster nodes represent the <strong>mean cosine similarity</strong>
+  of all show-to-show edges crossing between those two clusters. Thicker/more opaque edges indicate
+  clusters that share more vocabulary overlap.
+</p>
+
+<h2 id="path-distance">Pathfinder Distance</h2>
+
+<div class="docs-metric-card">
+  <div class="docs-metric-example">Distance: 2.847</div>
+  <p>Shown in the pathfinder results for each path found.</p>
+</div>
+
+<p>
+  The pathfinder uses <strong>Yen's K-shortest paths algorithm</strong> with Dijkstra's algorithm
+  underneath. Edge cost is <code>distance = 1 &minus; similarity</code>.
+</p>
+<p>
+  The total path distance is the sum of edge distances along the path. Lower distance means more
+  vocabulary overlap along the entire path, meaning an easier transition from the start show to the
+  end show.
+</p>
+<p>
+  The pathfinder finds up to 5 alternative paths, sorted by total distance.
+</p>
+
+<h2 id="node-size">Node Size</h2>
+
+<p>Node size is proportional to the amount of subtitle data available for that show:</p>
+
+<table class="docs-table">
+  <thead>
+    <tr>
+      <th>View</th>
+      <th>Formula</th>
+      <th>Meaning</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Cluster overview</td>
+      <td><code>max(5, showCount / 40)</code></td>
+      <td>Proportional to number of shows in the cluster</td>
+    </tr>
+    <tr>
+      <td>Per-cluster</td>
+      <td><code>2 + 10 &times; (tokens / maxTokens)</code></td>
+      <td>Proportional to total tokens in the show (relative to cluster max)</td>
+    </tr>
+    <tr>
+      <td>Full graph</td>
+      <td><code>1.5 + 5 &times; (tokens / maxTokens)</code></td>
+      <td>Proportional to total tokens (relative to global max)</td>
+    </tr>
+    <tr>
+      <td>Composite</td>
+      <td><code>1.5 + 5 &times; (tokens / maxTokens)</code></td>
+      <td>Proportional to total tokens (relative to cluster max)</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  Larger nodes have more subtitle data, which generally means more episodes or longer content.
+  This correlates with more reliable similarity scores &mdash; shows with very few tokens
+  may have less stable connections.
+</p>
+
+<h2 id="node-color">Node Color</h2>
+
+<p>
+  Nodes are colored on a <strong>Red &rarr; Yellow &rarr; Green</strong> gradient (the RdYlGn colormap):
+</p>
+
+<div class="docs-color-bar">
+  <div class="legend-bar"></div>
+  <div class="legend-labels">
+    <span>Peripheral / Harder</span>
+    <span>Central / Easier</span>
+  </div>
+</div>
+
+<p>
+  The color is based on the node's <strong>distance from the center of the layout</strong>, not its
+  centrality metric directly (though these are correlated since the layout is force-directed). The
+  distance is rank-normalized and inverted:
+</p>
+<ul>
+  <li><strong class="docs-color-green">Green</strong> = close to center = the layout's force-directed algorithm placed this node centrally because it has many strong connections</li>
+  <li><strong class="docs-color-red">Red</strong> = far from center = the node was pushed to the periphery due to weaker or fewer connections</li>
+</ul>
+
+<p>
+  In the cluster overview, colors reflect how central each cluster is among all clusters.
+  In per-cluster views, colors reflect how central each show is within its own cluster.
+  In the full graph view, colors reflect global position.
+</p>
+
+<h2 id="tokens">Total Tokens</h2>
+
+<div class="docs-metric-card">
+  <div class="docs-metric-example">Total tokens: 142,583</div>
+  <p>Shown in the detail panel when clicking a show.</p>
+</div>
+
+<p>
+  The total number of morphemes (word tokens) extracted from the show's subtitles by SudachiPy.
+  This includes all parts of speech (verbs, nouns, particles, etc.) except punctuation and whitespace.
+  Proper nouns are included in this count even though they are excluded from similarity computation.
+</p>
+<p>
+  Higher token counts generally mean more episodes or longer content, which produces more reliable
+  similarity scores.
+</p>
+
+<h2 id="episodes">Episode Count</h2>
+
+<div class="docs-metric-card">
+  <div class="docs-metric-example">Episodes: 24</div>
+  <p>Shown in the detail panel when clicking a show.</p>
+</div>
+
+<p>
+  The number of subtitle files processed for this show. Each subtitle file (typically one per episode)
+  counts as one episode. For movies, this is usually 1. For TV series, it reflects the number of
+  episodes with available subtitles (which may be less than the total episode count if some subtitles
+  were missing from the source archive).
+</p>
+{% endblock %}

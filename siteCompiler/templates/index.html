@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Japanese Show Graph — Cluster Overview{% endblock %}
+
+{% block head %}
+<script src="{{ root }}assets/graphology.umd.min.js"></script>
+<script src="{{ root }}assets/sigma.min.js"></script>
+<script src="{{ root }}data/clusters.js"></script>
+{% endblock %}
+
+{% block content %}
+<div id="graph-wrapper">
+  <div id="sigma-container"></div>
+  <div id="legend">
+    <div class="legend-title">Difficulty (vocabulary overlap)</div>
+    <div class="legend-bar"></div>
+    <div class="legend-labels">
+      <span>Harder (specialized)</span>
+      <span>Easier (shared vocab)</span>
+    </div>
+  </div>
+  <div id="tooltip" class="tooltip" style="display:none;"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var data = CLUSTERS_DATA;
+  var Graph = graphology.Graph;
+  var graph = new Graph();
+
+  data.nodes.forEach(function(n) {
+    graph.addNode(n.id, {
+      x: n.x, y: n.y,
+      size: n.size,
+      color: n.color,
+      label: n.label,
+      showCount: n.showCount,
+      difficulty: n.difficulty,
+      topShows: n.topShows
+    });
+  });
+
+  data.edges.forEach(function(e) {
+    graph.addEdge(e.source, e.target, {
+      weight: e.weight,
+      size: Math.max(0.3, e.size * 0.3),
+      color: '{{ theme.edge_default }}'
+    });
+  });
+
+  var container = document.getElementById('sigma-container');
+  var tooltip = document.getElementById('tooltip');
+
+  var renderer = new Sigma(graph, container, {
+    renderLabels: true,
+    labelColor: { color: '#333' },
+    labelFont: 'sans-serif',
+    labelSize: 12,
+    labelWeight: 'bold',
+    labelRenderedSizeThreshold: 2,
+    defaultEdgeColor: '{{ theme.edge_default }}',
+    defaultEdgeType: 'line',
+    stagePadding: 40,
+    nodeProgramClasses: {},
+    allowInvalidContainer: true
+  });
+
+  var hoveredNode = null;
+
+  renderer.on('enterNode', function(e) {
+    hoveredNode = e.node;
+    renderer.refresh();
+    var attrs = graph.getNodeAttributes(e.node);
+    tooltip.innerHTML =
+      '<strong>' + attrs.label + '</strong><br>' +
+      attrs.showCount + ' shows<br>' +
+      'Avg difficulty: ' + (attrs.difficulty * 100).toFixed(0) + '%<br>' +
+      '<small>' + attrs.topShows + '</small>';
+    tooltip.style.display = 'block';
+    container.style.cursor = 'pointer';
+  });
+
+  renderer.on('leaveNode', function() {
+    hoveredNode = null;
+    renderer.refresh();
+    tooltip.style.display = 'none';
+    container.style.cursor = 'default';
+  });
+
+  renderer.getMouseCaptor().on('mousemovebody', function(e) {
+    if (tooltip.style.display === 'block') {
+      tooltip.style.left = (e.original.clientX + 15) + 'px';
+      tooltip.style.top = (e.original.clientY + 15) + 'px';
+    }
+  });
+
+  renderer.setSetting('nodeReducer', function(node, attrs) {
+    var res = Object.assign({}, attrs);
+    if (hoveredNode && hoveredNode !== node && !graph.hasEdge(hoveredNode, node) && !graph.hasEdge(node, hoveredNode)) {
+      res.color = 'rgba(180,180,180,0.3)';
+      res.label = '';
+    }
+    return res;
+  });
+
+  renderer.setSetting('edgeReducer', function(edge, attrs) {
+    var res = Object.assign({}, attrs);
+    if (hoveredNode) {
+      var src = graph.source(edge);
+      var tgt = graph.target(edge);
+      if (src === hoveredNode || tgt === hoveredNode) {
+        res.color = '{{ theme.edge_hover }}';
+        res.size = (attrs.size || 0.5) * 2;
+      } else {
+        res.color = '{{ theme.edge_dim }}';
+      }
+    }
+    return res;
+  });
+
+  renderer.on('clickNode', function(e) {
+    window.location.href = 'cluster/' + e.node + '.html';
+  });
+})();
+</script>
+{% endblock %}
