@@ -117,7 +117,8 @@
 </ul>
 
 <p>
-  Global centrality is also used to compute <a href="#difficulty">cluster difficulty</a>.
+  Global centrality is used for per-show coloring in the full graph view but is <em>not</em> used
+  for <a href="#difficulty">cluster difficulty</a>, which uses vocabulary commonality instead.
 </p>
 
 <h2 id="difficulty">Cluster Difficulty (Avg Difficulty)</h2>
@@ -128,19 +129,23 @@
 </div>
 
 <p>
-  Cluster difficulty is the <strong>average global centrality</strong> of all shows in the cluster.
+  Cluster difficulty is the <strong>average vocabulary commonality</strong> of all shows in the
+  cluster. For each show, a score is computed as the count-weighted average document frequency of its
+  morphemes using raw counts (before TF-IDF). Shows that mostly use common, widespread words score
+  high; shows that rely on rare or specialized words score low. These per-show scores are
+  rank-normalized to 0&ndash;1, then averaged across the cluster.
 </p>
 
 <p>
   <strong>Important:</strong> Despite the name "difficulty," a <em>higher</em> percentage actually
-  means the cluster is <em>easier</em> (more globally connected vocabulary). A <em>lower</em>
-  percentage means the cluster is <em>harder</em> (more specialized vocabulary). This is because
-  it directly reflects centrality, where higher = more connected = easier.
+  means the cluster is <em>easier</em> (vocabulary made up of common, widely-used words). A
+  <em>lower</em> percentage means the cluster is <em>harder</em> (vocabulary skewed toward rare or
+  specialized words).
 </p>
 
 <ul>
-  <li><strong>High difficulty % (e.g. 70%)</strong> &mdash; Easier cluster. Shows here use widely-shared vocabulary.</li>
-  <li><strong>Low difficulty % (e.g. 28%)</strong> &mdash; Harder cluster. Shows here use specialized or rare vocabulary.</li>
+  <li><strong>High difficulty % (e.g. 70%)</strong> &mdash; Easier cluster. Shows here use common everyday vocabulary that appears across many shows.</li>
+  <li><strong>Low difficulty % (e.g. 28%)</strong> &mdash; Harder cluster. Shows here use rare or specialized vocabulary found in few other shows.</li>
 </ul>
 
 <h2 id="edge-weight">Edge Weight &amp; Distance</h2>
@@ -282,7 +287,7 @@
 </ul>
 
 <p>
-  In the cluster overview, colors reflect each cluster's average global centrality (difficulty).
+  In the cluster overview, colors reflect each cluster's average vocabulary commonality (difficulty).
   In per-cluster views, colors reflect within-cluster centrality.
   In the full graph view, colors reflect global centrality.
 </p>

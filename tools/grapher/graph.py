@@ -363,6 +363,45 @@ def compute_global_centrality(similarity: csr_matrix) -> list[float]:
     return normalized.tolist()
 
 
+def compute_vocab_difficulty(count_matrix: csr_matrix) -> list[float]:
+    """Vocabulary commonality score from the raw count matrix.
+
+    For each show, computes the count-weighted average document frequency of its
+    morphemes.  Shows that mostly use common/widespread words score high (easy);
+    shows that rely on rare/specialized words score low (hard).
+
+    The scores are rank-normalized to 0-1 so they can be used directly as a
+    colour-map index (0 = hardest / red, 1 = easiest / green).
+    """
+    # Document frequency: number of shows each morpheme appears in
+    binary = count_matrix.copy()
+    binary.data = np.ones_like(binary.data)
+    df = np.asarray(binary.sum(axis=0)).flatten()  # (n_morphs,)
+    n_shows = count_matrix.shape[0]
+    norm_df = df / n_shows  # 0-1 normalised document frequency
+
+    scores = np.zeros(n_shows)
+    for i in range(n_shows):
+        row = count_matrix.getrow(i)
+        _, col_indices = row.nonzero()
+        counts = np.asarray(row[:, col_indices].todense()).flatten()
+        dfs = norm_df[col_indices]
+        total = counts.sum()
+        if total > 0:
+            scores[i] = (counts * dfs).sum() / total
+
+    # Rank-normalize to 0-1
+    ranks = scores.argsort().argsort()
+    normalized = ranks / max(n_shows - 1, 1)
+
+    print(
+        f"Vocab difficulty: min={normalized.min():.3f}, "
+        f"max={normalized.max():.3f}, mean={normalized.mean():.3f}",
+        file=sys.stderr,
+    )
+    return normalized.tolist()
+
+
 # ---------------------------------------------------------------------------
 # 6b. Cluster names from top discriminative morphemes
 # ---------------------------------------------------------------------------
@@ -466,6 +505,7 @@ def export_graphml(
     membership: list[int],
     centrality: list[float],
     global_centrality: list[float],
+    vocab_difficulty: list[float],
     cluster_edges: dict[tuple[int, int], ClusterEdge],
     cluster_names: dict[int, str],
 ) -> None:
@@ -488,13 +528,13 @@ def export_graphml(
         member_meta.sort(reverse=True)
         top_titles = " | ".join(t for _, t in member_meta[:3])
 
-        avg_global = sum(global_centrality[i] for i in members) / len(members)
+        avg_vocab = sum(vocab_difficulty[i] for i in members) / len(members)
         cg.add_node(
             cid,
             label=cluster_names.get(cid, f"Cluster {cid}"),
             top_shows=top_titles,
             size=len(members),
-            difficulty=round(avg_global, 6),
+            difficulty=round(avg_vocab, 6),
         )
 
     for (ca, cb), ce in cluster_edges.items():
@@ -525,6 +565,7 @@ def export_graphml(
                 episode_count=meta.episode_count,
                 centrality_score=round(centrality[idx], 6),
                 global_centrality=round(global_centrality[idx], 6),
+                vocab_difficulty=round(vocab_difficulty[idx], 6),
                 total_tokens=meta.total_tokens,
             )
 
@@ -602,6 +643,7 @@ def plot_graphs(
     membership: list[int],
     centrality: list[float],
     global_centrality: list[float],
+    vocab_difficulty: list[float],
     cluster_edges: dict[tuple[int, int], ClusterEdge],
     cluster_names: dict[int, str],
 ) -> None:
@@ -622,12 +664,12 @@ def plot_graphs(
     # --- Cluster graph ---
     cg = nx.Graph()
     for cid, members in sorted(clusters.items()):
-        # Difficulty = average global centrality of member shows
-        # Higher = more typical/shared vocabulary = easier entry
-        avg_global = sum(global_centrality[i] for i in members) / len(members)
+        # Difficulty = average vocab commonality of member shows
+        # Higher = more common/widespread vocabulary = easier entry
+        avg_vocab = sum(vocab_difficulty[i] for i in members) / len(members)
         cg.add_node(cid, size=len(members),
                     name=cluster_names.get(cid, f"Cluster {cid}"),
-                    difficulty=avg_global)
+                    difficulty=avg_vocab)
 
     for (ca, cb), ce in cluster_edges.items():
         cg.add_edge(ca, cb, weight=ce.weight)
@@ -803,6 +845,9 @@ def main() -> None:
         count_matrix, maps, shows_meta, args.min_tokens, args.min_kana_ratio,
     )
 
+    # 1c. Vocab difficulty (before TF-IDF destroys raw counts)
+    vocab_difficulty = compute_vocab_difficulty(count_matrix)
+
     # 2. TF-IDF
     tfidf = compute_tfidf(count_matrix)
     del count_matrix
@@ -838,7 +883,7 @@ def main() -> None:
     export_graphml(
         args.output, maps, shows_meta,
         similarity, membership, centrality, global_centrality,
-        cluster_edges, cluster_names,
+        vocab_difficulty, cluster_edges, cluster_names,
     )
     export_full_layout(args.output, full_layout)
 
@@ -847,7 +892,7 @@ def main() -> None:
         plot_graphs(
             args.output, maps, shows_meta,
             similarity, membership, centrality, global_centrality,
-            cluster_edges, cluster_names,
+            vocab_difficulty, cluster_edges, cluster_names,
         )
 
     # Summary

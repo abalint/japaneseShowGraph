@@ -249,8 +249,9 @@
 </ul>
 <p>
   In per-cluster views, within-cluster centrality is used. In the full graph view, global centrality
-  is used. In the cluster overview, each cluster is colored by its average global centrality
-  (difficulty). Centrality scores are rank-normalized so the most connected node gets the brightest
+  is used. In the cluster overview, each cluster is colored by its average vocabulary commonality
+  (difficulty) &mdash; the count-weighted average document frequency of morphemes used by shows in
+  the cluster. Centrality scores are rank-normalized so the most connected node gets the brightest
   green (1.0) and the least connected node gets the deepest red (0.0).
 </p>
 {% endblock %}
