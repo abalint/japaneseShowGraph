@@ -79,7 +79,7 @@ def load_data(db_path: str) -> tuple[csr_matrix, IndexMaps, dict[int, ShowMeta],
         )
 
     # Morpheme labels + POS for cluster naming and filtering
-    SKIP_POS_PREFIXES = ("名詞-固有名詞", "名詞-数詞", "記号", "感動詞")
+    SKIP_POS_PREFIXES = ("名詞-固有名詞", "名詞-数詞", "記号", "感動詞", "助詞", "助動詞")
 
     morph_labels: dict[int, str] = {}
     skip_ids: set[int] = set()
