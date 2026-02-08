@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS morphemes (
     dictionary_form TEXT NOT NULL,
     part_of_speech TEXT NOT NULL,
     reading TEXT,
+    is_oov INTEGER NOT NULL DEFAULT 0,
     UNIQUE(surface_form, dictionary_form, part_of_speech, reading)
 );
 
@@ -178,12 +179,15 @@ def read_lines(files: list[Path]) -> list[str]:
 
 def tokenise_lines(
     tokenizer, lines: list[str]
-) -> Counter[tuple[str, str, str, str]]:
-    """Tokenise lines and return morpheme counts.
+) -> tuple[Counter[tuple[str, str, str, str]], set[tuple[str, str, str, str]]]:
+    """Tokenise lines and return morpheme counts and OOV set.
 
-    Returns a Counter keyed by (surface, dict_form, pos, reading).
+    Returns (counts, oov_keys) where counts is a Counter keyed by
+    (surface, dict_form, pos, reading) and oov_keys is the subset of
+    keys that Sudachi could not find in its dictionary.
     """
     counts: Counter[tuple[str, str, str, str]] = Counter()
+    oov_keys: set[tuple[str, str, str, str]] = set()
     for line in lines:
         for token in tokenizer.tokenize(line):
             pos_parts = token.part_of_speech()
@@ -193,8 +197,11 @@ def tokenise_lines(
             surface = token.surface()
             dict_form = token.dictionary_form()
             reading = token.reading_form()
-            counts[(surface, dict_form, pos, reading)] += 1
-    return counts
+            key = (surface, dict_form, pos, reading)
+            counts[key] += 1
+            if token.is_oov():
+                oov_keys.add(key)
+    return counts, oov_keys
 
 
 def validate_japanese_content(
@@ -227,6 +234,7 @@ def insert_show(
     title: str,
     episode_count: int,
     morpheme_counts: Counter[tuple[str, str, str, str]],
+    oov_keys: set[tuple[str, str, str, str]],
 ) -> None:
     """Insert a show and its morpheme data in a single transaction."""
     cur = conn.cursor()
@@ -239,11 +247,12 @@ def insert_show(
     show_id = cur.lastrowid
 
     for (surface, dict_form, pos, reading), count in morpheme_counts.items():
+        is_oov = 1 if (surface, dict_form, pos, reading) in oov_keys else 0
         cur.execute(
-            """INSERT INTO morphemes (surface_form, dictionary_form, part_of_speech, reading)
-               VALUES (?, ?, ?, ?)
+            """INSERT INTO morphemes (surface_form, dictionary_form, part_of_speech, reading, is_oov)
+               VALUES (?, ?, ?, ?, ?)
                ON CONFLICT(surface_form, dictionary_form, part_of_speech, reading) DO NOTHING""",
-            (surface, dict_form, pos, reading),
+            (surface, dict_form, pos, reading, is_oov),
         )
         cur.execute(
             """SELECT id FROM morphemes
@@ -361,7 +370,7 @@ def main() -> None:
                 skipped += 1
                 continue
 
-            counts = tokenise_lines(tok, lines)
+            counts, oov_keys = tokenise_lines(tok, lines)
 
             # Validate that this actually looks like Japanese content
             is_ja, kana_ratio, total_tokens = validate_japanese_content(
@@ -376,7 +385,7 @@ def main() -> None:
                 )
                 continue
 
-            insert_show(conn, category, title, len(txt_files), counts)
+            insert_show(conn, category, title, len(txt_files), counts, oov_keys)
             processed += 1
 
             print(

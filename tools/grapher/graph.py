@@ -77,37 +77,45 @@ def load_data(db_path: str) -> tuple[csr_matrix, IndexMaps, dict[int, ShowMeta],
         )
 
     # Morpheme labels + POS for cluster naming and filtering
+    SKIP_POS_PREFIXES = ("名詞-固有名詞", "名詞-数詞", "記号", "感動詞")
+
     morph_labels: dict[int, str] = {}
-    proper_noun_ids: set[int] = set()
+    skip_ids: set[int] = set()
+    skip_counts: Counter[str] = Counter()
     kana_morph_ids: set[int] = set()
     for row in conn.execute(
-        "SELECT id, surface_form, dictionary_form, part_of_speech FROM morphemes"
+        "SELECT id, surface_form, dictionary_form, part_of_speech, is_oov FROM morphemes"
     ):
         morph_labels[row["id"]] = row["dictionary_form"]
-        if row["part_of_speech"].startswith("名詞-固有名詞"):
-            proper_noun_ids.add(row["id"])
+        pos = row["part_of_speech"]
+        for prefix in SKIP_POS_PREFIXES:
+            if pos.startswith(prefix):
+                skip_ids.add(row["id"])
+                skip_counts[prefix] += 1
+                break
+        if row["is_oov"]:
+            skip_ids.add(row["id"])
+            skip_counts["OOV"] += 1
         if KANA_RE.search(row["surface_form"]):
             kana_morph_ids.add(row["id"])
 
-    print(
-        f"Filtering {len(proper_noun_ids):,} proper noun morphemes "
-        f"(character names, place names, etc.)",
-        file=sys.stderr,
-    )
+    for label, count in skip_counts.most_common():
+        print(f"Filtering {count:,} {label} morphemes", file=sys.stderr)
+    print(f"Total filtered: {len(skip_ids):,} unique morphemes", file=sys.stderr)
 
-    # Build ID maps and COO data in a single pass, skipping proper nouns
+    # Build ID maps and COO data in a single pass, skipping filtered morphemes
     maps = IndexMaps()
     rows, cols, data = [], [], []
 
     cur = conn.execute("SELECT show_id, morpheme_id, count FROM show_morphemes")
     for show_id, morpheme_id, count in cur:
-        # Always count total tokens (including proper nouns)
+        # Always count total tokens (including filtered morphemes)
         shows_meta[show_id].total_tokens += count
         if morpheme_id in kana_morph_ids:
             shows_meta[show_id].kana_tokens += count
 
-        # Skip proper nouns for the similarity matrix
-        if morpheme_id in proper_noun_ids:
+        # Skip filtered morphemes for the similarity matrix
+        if morpheme_id in skip_ids:
             continue
 
         if show_id not in maps.show_db_to_idx:
