@@ -5,6 +5,8 @@
 <script src="{{ root }}assets/graphology.umd.min.js"></script>
 <script src="{{ root }}assets/sigma.min.js"></script>
 <script src="{{ root }}data/cluster_{{ cluster_id }}.js"></script>
+<script src="{{ root }}data/show_vocab.js"></script>
+<script src="{{ root }}data/pathfinding.js"></script>
 {% endblock %}
 
 {% block content %}
@@ -28,6 +30,7 @@
   <button id="detail-close" class="detail-close">&times;</button>
   <h2 id="detail-title"></h2>
   <div id="detail-meta" class="detail-meta"></div>
+  <button id="why-btn" class="why-btn" style="display:none">Why is this here?</button>
   <h3>Neighbors (by similarity)</h3>
   <ul id="detail-neighbors" class="neighbor-list"></ul>
 </div>
@@ -73,6 +76,7 @@
   var detailMeta = document.getElementById('detail-meta');
   var detailNeighbors = document.getElementById('detail-neighbors');
   var detailClose = document.getElementById('detail-close');
+  var whyBtn = document.getElementById('why-btn');
 
   var selectedNode = null;
   var hoveredNode = null;
@@ -110,22 +114,68 @@
       '<div><strong>Centrality (in-cluster):</strong> ' + ((attrs.centrality || 0) * 100).toFixed(0) + '%</div>' +
       '<div><strong>Centrality (global):</strong> ' + ((attrs.globalCentrality || 0) * 100).toFixed(0) + '%</div>';
 
-    var neighbors = getNeighborsSorted(nodeId);
+    // "Why here?" button
+    if (typeof SHOW_VOCAB !== 'undefined' && SHOW_VOCAB.shows && SHOW_VOCAB.shows[nodeId]) {
+      whyBtn.style.display = 'block';
+      whyBtn.onclick = function() {
+        var nbList = getNeighborsSorted(nodeId).slice(0, 5).map(function(nb) {
+          var na = graph.getNodeAttributes(nb.id);
+          return { id: nb.id, label: na.label, weight: nb.weight };
+        });
+        showWhyPopup(nodeId, attrs.label, data.clusterId, nbList);
+      };
+    } else {
+      whyBtn.style.display = 'none';
+    }
+
+    // Build neighbor list from full graph adjacency (includes cross-cluster edges)
+    var allNeighbors = [];
+    if (typeof PATHFINDING_DATA !== 'undefined' && PATHFINDING_DATA.adj[nodeId]) {
+      PATHFINDING_DATA.adj[nodeId].forEach(function(pair) {
+        var nbId = String(pair[0]);
+        var weight = pair[1];
+        var nbNode = PATHFINDING_DATA.nodes[nbId];
+        if (nbNode) {
+          allNeighbors.push({
+            id: nbId, label: nbNode.t, weight: weight,
+            cluster: nbNode.c, local: graph.hasNode(nbId)
+          });
+        }
+      });
+    } else {
+      // Fallback to cluster-only edges if pathfinding data unavailable
+      getNeighborsSorted(nodeId).forEach(function(nb) {
+        var nbAttrs = graph.getNodeAttributes(nb.id);
+        allNeighbors.push({
+          id: nb.id, label: nbAttrs.label, weight: nb.weight,
+          cluster: data.clusterId, local: true
+        });
+      });
+    }
     detailNeighbors.innerHTML = '';
-    neighbors.slice(0, 30).forEach(function(nb) {
-      var nbAttrs = graph.getNodeAttributes(nb.id);
+    allNeighbors.slice(0, 30).forEach(function(nb) {
       var li = document.createElement('li');
       var a = document.createElement('a');
-      a.href = '#';
-      a.textContent = nbAttrs.label;
-      a.onclick = function(e) {
-        e.preventDefault();
-        selectAndFocus(nb.id);
-      };
+      a.textContent = nb.label;
+      if (nb.local) {
+        a.href = '#';
+        a.onclick = function(e) {
+          e.preventDefault();
+          selectAndFocus(nb.id);
+        };
+      } else {
+        a.href = '{{ root }}cluster/' + nb.cluster + '.html#show=' + nb.id;
+      }
+      li.appendChild(a);
+      if (!nb.local) {
+        var badge = document.createElement('span');
+        badge.className = 'cluster-badge';
+        badge.textContent = 'C' + nb.cluster;
+        li.appendChild(badge);
+      }
       var span = document.createElement('span');
       span.className = 'nb-weight';
       span.textContent = (nb.weight * 100).toFixed(1) + '%';
-      li.appendChild(a);
       li.appendChild(span);
       detailNeighbors.appendChild(li);
     });

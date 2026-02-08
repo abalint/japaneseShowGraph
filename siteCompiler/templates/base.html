@@ -31,6 +31,13 @@
 </main>
 <script src="{{ root }}data/search_index.js"></script>
 {% block scripts %}{% endblock %}
+<div id="why-overlay" style="display:none;">
+  <div id="why-popup">
+    <button id="why-popup-close" class="detail-close">&times;</button>
+    <h2 id="why-title"></h2>
+    <div id="why-content"></div>
+  </div>
+</div>
 <script>
 (function() {
   var input = document.getElementById('global-search');
@@ -74,6 +81,190 @@
       dropdown.style.display = 'none';
     }
   });
+})();
+</script>
+<script>
+(function() {
+  var overlay = document.getElementById('why-overlay');
+  var closeBtn = document.getElementById('why-popup-close');
+  if (!overlay || !closeBtn) return;
+
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) overlay.style.display = 'none';
+  });
+  closeBtn.addEventListener('click', function() {
+    overlay.style.display = 'none';
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && overlay.style.display !== 'none') {
+      overlay.style.display = 'none';
+    }
+  });
+
+  // Intercept copy inside the popup: put one word per line on the clipboard
+  document.getElementById('why-popup').addEventListener('copy', function(e) {
+    var sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    // Collect all .why-word spans that overlap the selection
+    var range = sel.getRangeAt(0);
+    var words = this.querySelectorAll('.why-word');
+    var selected = [];
+    for (var i = 0; i < words.length; i++) {
+      if (range.intersectsNode(words[i])) {
+        selected.push(words[i].textContent);
+      }
+    }
+    if (selected.length > 1) {
+      e.clipboardData.setData('text/plain', selected.join('\n'));
+      e.preventDefault();
+    }
+  });
+
+  /**
+   * Show the "Why is this here?" popup for a given show.
+   * @param {string} nodeId - show DB ID
+   * @param {string} label - show title
+   * @param {number|string} clusterId - cluster ID
+   * @param {Array} neighbors - [{id, label, weight}, ...] from graph edges
+   */
+  window.showWhyPopup = function(nodeId, label, clusterId, neighbors) {
+    if (typeof SHOW_VOCAB === 'undefined') return;
+    var vocabData = SHOW_VOCAB.shows ? SHOW_VOCAB.shows[nodeId] : null;
+    if (!vocabData) return;
+
+    document.getElementById('why-title').textContent =
+      'Why is \u201c' + label + '\u201d here?';
+
+    var html = '';
+
+    // Distinctive vocabulary
+    var INITIAL_WORDS = 15;
+    if (vocabData.u && vocabData.u.length > 0) {
+      html += '<div class="why-section">';
+      html += '<div class="why-section-title">Distinctive Vocabulary</div>';
+      html += '<p class="why-desc">Words that appear frequently in this show but are rare elsewhere:</p>';
+      html += '<div class="why-words">';
+      var total = vocabData.u.length;
+      for (var i = 0; i < Math.min(INITIAL_WORDS, total); i++) {
+        html += '<span class="why-word">' + vocabData.u[i][0] + '</span>';
+      }
+      if (total > INITIAL_WORDS) {
+        html += '</div>';
+        html += '<div id="why-words-extra" class="why-words" style="display:none;margin-top:5px;">';
+        for (var i2 = INITIAL_WORDS; i2 < total; i2++) {
+          html += '<span class="why-word">' + vocabData.u[i2][0] + '</span>';
+        }
+        html += '</div>';
+        html += '<button id="why-expand-btn" class="why-expand" onclick="'
+          + 'var ex=document.getElementById(\'why-words-extra\');'
+          + 'var btn=document.getElementById(\'why-expand-btn\');'
+          + 'if(ex.style.display===\'none\'){'
+          + 'ex.style.display=\'flex\';btn.textContent=\'Show less\';'
+          + '}else{'
+          + 'ex.style.display=\'none\';btn.textContent=\'Show all ' + total + ' words\';'
+          + '}">'
+          + 'Show all ' + total + ' words</button>';
+      } else {
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+
+    // Neighbor connections (from vocab data, which includes cross-cluster neighbors)
+    if (vocabData.n && vocabData.n.length > 0) {
+      html += '<div class="why-section">';
+      html += '<div class="why-section-title">Strongest Connections</div>';
+      html += '<p class="why-desc">Vocabulary shared with closest neighbors:</p>';
+      for (var j = 0; j < vocabData.n.length; j++) {
+        var nb = vocabData.n[j];
+        if (!nb.w || nb.w.length === 0) continue;
+        html += '<div class="why-neighbor">';
+        html += '<div class="why-neighbor-header">';
+        html += '<span class="why-neighbor-title">' + nb.t + '</span>';
+        html += ' <span class="why-neighbor-sim">' + (nb.s * 100).toFixed(1) + '%</span>';
+        html += '<span class="why-neighbor-cluster">C' + nb.c + '</span>';
+        html += '</div>';
+        html += '<div class="why-words">';
+        for (var k = 0; k < nb.w.length; k++) {
+          html += '<span class="why-word">' + nb.w[k][0] + '</span>';
+        }
+        html += '</div></div>';
+      }
+      html += '</div>';
+    }
+
+    // Cluster keywords
+    var clusterWords = SHOW_VOCAB.clusters
+      ? SHOW_VOCAB.clusters[String(clusterId)] : null;
+    if (clusterWords && clusterWords.length > 0) {
+      html += '<div class="why-section">';
+      html += '<div class="why-section-title">Cluster Signature</div>';
+      html += '<p class="why-desc">Defining vocabulary of this cluster:</p>';
+      html += '<div class="why-words">';
+      for (var m = 0; m < clusterWords.length; m++) {
+        html += '<span class="why-word why-word-cluster">' + clusterWords[m][0] + '</span>';
+      }
+      html += '</div></div>';
+    }
+
+    // Cluster placement breakdown (from full graph adjacency)
+    if (typeof PATHFINDING_DATA !== 'undefined' && PATHFINDING_DATA.adj[nodeId]) {
+      var adj = PATHFINDING_DATA.adj[nodeId];
+      var cWeights = {}, cCounts = {};
+      for (var p = 0; p < adj.length; p++) {
+        var pId = String(adj[p][0]);
+        var pW = adj[p][1];
+        var pNode = PATHFINDING_DATA.nodes[pId];
+        if (!pNode) continue;
+        var pc = pNode.c;
+        cWeights[pc] = (cWeights[pc] || 0) + pW;
+        cCounts[pc] = (cCounts[pc] || 0) + 1;
+      }
+      var cList = Object.keys(cWeights).map(function(c) {
+        return { id: c, weight: cWeights[c], count: cCounts[c] };
+      });
+      cList.sort(function(a, b) { return b.weight - a.weight; });
+      var totalW = cList.reduce(function(s, c) { return s + c.weight; }, 0);
+
+      if (cList.length > 1) {
+        var clusterNames = SHOW_VOCAB.names || {};
+        html += '<div class="why-section">';
+        html += '<div class="why-section-title">Cluster Placement</div>';
+        html += '<p class="why-desc">Shows are grouped where they have the strongest <em>total</em> vocabulary overlap, not just the strongest single connection. '
+          + 'A show may have a strong individual neighbor in another cluster but still belong here because it shares more vocabulary overall.</p>';
+        html += '<div class="why-cluster-breakdown">';
+        var shown = Math.min(cList.length, 5);
+        for (var ci = 0; ci < shown; ci++) {
+          var cl = cList[ci];
+          var pct = (cl.weight / totalW * 100).toFixed(1);
+          var barW = (cl.weight / cList[0].weight * 100).toFixed(0);
+          var isCurrent = String(cl.id) === String(clusterId);
+          var cName = clusterNames[String(cl.id)] || ('Cluster ' + cl.id);
+          html += '<div class="why-cluster-row' + (isCurrent ? ' why-cluster-current' : '') + '">';
+          html += '<div class="why-cluster-label">';
+          if (isCurrent) html += '<strong>';
+          html += cName;
+          if (isCurrent) html += ' \u2190</strong>';
+          html += '</div>';
+          html += '<div class="why-cluster-bar-bg"><div class="why-cluster-bar-fill" style="width:' + barW + '%"></div></div>';
+          html += '<div class="why-cluster-stats">' + cl.count + ' neighbors, ' + pct + '%</div>';
+          html += '</div>';
+        }
+        html += '</div></div>';
+      }
+    }
+
+    // Explanation note
+    html += '<div class="why-note">';
+    html += 'Positions are determined by <strong>vocabulary similarity</strong> \u2014 ';
+    html += 'shows using similar words appear close together. This can create ';
+    html += 'surprising cross-genre connections when shows share vocabulary ';
+    html += 'from overlapping domains (competition, friendship, etc).';
+    html += '</div>';
+
+    document.getElementById('why-content').innerHTML = html;
+    overlay.style.display = 'flex';
+  };
 })();
 </script>
 </body>

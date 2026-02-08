@@ -34,6 +34,8 @@ from sklearn.feature_extraction.text import TfidfTransformer
 from sparse_dot_topn import sp_matmul_topn
 
 KANA_RE = re.compile(r'[\u3040-\u309f\u30a0-\u30ff]')
+# Matches strings that contain at least one Japanese character (hiragana, katakana, or kanji)
+JAPANESE_RE = re.compile(r'[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9fff]')
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +98,9 @@ def load_data(db_path: str) -> tuple[csr_matrix, IndexMaps, dict[int, ShowMeta],
         if row["is_oov"]:
             skip_ids.add(row["id"])
             skip_counts["OOV"] += 1
+        if not JAPANESE_RE.search(row["dictionary_form"]):
+            skip_ids.add(row["id"])
+            skip_counts["non-Japanese"] += 1
         if KANA_RE.search(row["surface_form"]):
             kana_morph_ids.add(row["id"])
 
@@ -371,6 +376,146 @@ def compute_global_centrality(similarity: csr_matrix) -> list[float]:
     return normalized.tolist()
 
 
+def compute_show_vocab_data(
+    tfidf: csr_matrix,
+    similarity: csr_matrix,
+    maps: IndexMaps,
+    morph_labels: dict[int, str],
+    membership: list[int],
+    shows_meta: dict[int, ShowMeta],
+    n_top_words: int = 50,
+    n_top_neighbors: int = 5,
+    n_shared_words: int = 8,
+) -> dict:
+    """Compute per-show vocabulary explanation data for the 'Why here?' popup.
+
+    For each show, finds:
+    - Top distinctive words (highest TF-IDF values)
+    - Shared vocabulary with top neighbors (term-wise similarity contributions)
+
+    Also computes per-cluster signature keywords (discriminative terms).
+
+    Returns {
+        "shows": {db_id: {"u": [[word, score], ...], "n": [...]}},
+        "clusters": {cluster_id: [[word, score], ...]}
+    }
+    """
+    n_shows = tfidf.shape[0]
+
+    # --- Cluster keywords (discriminative terms) ---
+    print("  Computing cluster keywords...", file=sys.stderr)
+    clusters_by_id: dict[int, list[int]] = defaultdict(list)
+    for idx, cid in enumerate(membership):
+        clusters_by_id[cid].append(idx)
+
+    global_mean = np.asarray(tfidf.mean(axis=0)).flatten()
+
+    cluster_keywords: dict[str, list] = {}
+    for cid, members in sorted(clusters_by_id.items()):
+        cluster_tfidf = tfidf[members]
+        cluster_mean = np.asarray(cluster_tfidf.mean(axis=0)).flatten()
+        disc = cluster_mean - global_mean
+
+        # Document frequency within cluster: how many shows use each morpheme
+        cluster_binary = cluster_tfidf.copy()
+        cluster_binary.data = np.ones_like(cluster_binary.data)
+        cluster_df = np.asarray(cluster_binary.sum(axis=0)).flatten()
+        min_df = max(2, int(len(members) * 0.10))  # at least 10% of cluster
+
+        # Rank by discriminative score, but only keep broadly-used terms
+        top_indices = disc.argsort()[::-1]
+        words = []
+        for mi in top_indices:
+            if len(words) >= 10:
+                break
+            if cluster_df[mi] < min_df:
+                continue
+            morph_db_id = maps.morph_idx_to_db[mi]
+            word = morph_labels.get(morph_db_id, "?")
+            score = round(float(disc[mi]), 4)
+            if score > 0:
+                words.append([word, score])
+        cluster_keywords[str(cid)] = words
+
+    # --- Per-show data ---
+    print("  Computing per-show vocabulary data...", file=sys.stderr)
+    shows_data: dict[str, dict] = {}
+
+    for idx in range(n_shows):
+        if idx % 2000 == 0:
+            print(f"    {idx}/{n_shows} shows...", file=sys.stderr)
+
+        db_id = maps.show_idx_to_db[idx]
+
+        # Top distinctive words (highest TF-IDF)
+        row = tfidf.getrow(idx)
+        _, col_indices = row.nonzero()
+        values = np.asarray(row[:, col_indices].todense()).flatten()
+        top_order = values.argsort()[::-1][:n_top_words]
+
+        seen_words: set[str] = set()
+        top_words: list[list] = []
+        for i in top_order:
+            morph_idx = col_indices[i]
+            morph_db_id = maps.morph_idx_to_db[morph_idx]
+            word = morph_labels.get(morph_db_id, "?")
+            if word in seen_words:
+                continue
+            seen_words.add(word)
+            score = round(float(values[i]), 4)
+            top_words.append([word, score])
+
+        # Top neighbors and shared vocabulary
+        sim_row = similarity.getrow(idx)
+        _, nb_indices = sim_row.nonzero()
+        nb_weights = np.asarray(sim_row[:, nb_indices].todense()).flatten()
+        nb_order = nb_weights.argsort()[::-1][:n_top_neighbors]
+
+        neighbor_list: list[dict] = []
+        for ni in nb_order:
+            nb_idx = nb_indices[ni]
+            nb_db_id = maps.show_idx_to_db[nb_idx]
+            nb_meta = shows_meta[nb_db_id]
+            sim_score = round(float(nb_weights[ni]), 4)
+
+            # Term-wise similarity contributions
+            nb_row = tfidf.getrow(nb_idx)
+            product = row.multiply(nb_row)
+            _, prod_cols = product.nonzero()
+            if len(prod_cols) == 0:
+                continue
+            prod_vals = np.asarray(product[:, prod_cols].todense()).flatten()
+
+            prod_order = prod_vals.argsort()[::-1][:n_shared_words]
+            shared: list[list] = []
+            seen_shared: set[str] = set()
+            for pi in prod_order:
+                morph_idx = prod_cols[pi]
+                morph_db_id = maps.morph_idx_to_db[morph_idx]
+                word = morph_labels.get(morph_db_id, "?")
+                if word in seen_shared:
+                    continue
+                seen_shared.add(word)
+                contrib = round(float(prod_vals[pi]), 4)
+                shared.append([word, contrib])
+
+            neighbor_list.append({
+                "i": str(nb_db_id),
+                "t": nb_meta.title,
+                "c": membership[nb_idx],
+                "s": sim_score,
+                "w": shared,
+            })
+
+        shows_data[str(db_id)] = {
+            "u": top_words,
+            "n": neighbor_list,
+        }
+
+    print(f"  Computed vocab data for {len(shows_data)} shows", file=sys.stderr)
+    return {"shows": shows_data, "clusters": cluster_keywords}
+
+
 def compute_vocab_difficulty(count_matrix: csr_matrix) -> list[float]:
     """Vocabulary commonality score from the raw count matrix.
 
@@ -631,6 +776,18 @@ def export_graphml(
     print(f"Wrote {full_path} ({len(nodes_out)} nodes, full adjacency)", file=sys.stderr)
 
 
+def export_show_vocab(output_dir: Path, vocab_data: dict) -> None:
+    """Write show_vocab.json with per-show vocabulary explanation data."""
+    path = output_dir / "show_vocab.json"
+    with open(path, "w") as f:
+        json.dump(vocab_data, f, separators=(",", ":"), ensure_ascii=False)
+    size_mb = path.stat().st_size / (1024 * 1024)
+    print(
+        f"Wrote {path} ({len(vocab_data.get('shows', {}))} shows, {size_mb:.1f} MB)",
+        file=sys.stderr,
+    )
+
+
 def export_full_layout(output_dir: Path, full_layout: dict[str, list[float]]) -> None:
     """Write full_layout.json with precomputed positions for every node."""
     path = output_dir / "full_layout.json"
@@ -876,12 +1033,19 @@ def main() -> None:
     membership = detect_communities(graph, args.resolution)
     del graph
 
+    # 5b. Show vocabulary explanation data (needs tfidf + similarity + membership)
+    print("Computing show vocabulary data...", file=sys.stderr)
+    show_vocab = compute_show_vocab_data(
+        tfidf, similarity, maps, morph_labels, membership, shows_meta,
+    )
+
     # 6. Centrality (weighted degree within each cluster)
     centrality = compute_centrality(similarity, membership)
     del tfidf
 
     # 6b. Cluster names
     cluster_names = load_cluster_names(args.names)
+    show_vocab["names"] = {str(k): v for k, v in cluster_names.items()}
     print_cluster_summary(membership, maps, shows_meta, cluster_names)
 
     # 7. Cluster edges
@@ -894,6 +1058,7 @@ def main() -> None:
         vocab_difficulty, cluster_edges, cluster_names,
     )
     export_full_layout(args.output, full_layout)
+    export_show_vocab(args.output, show_vocab)
 
     # 9. Plot
     if args.plot:

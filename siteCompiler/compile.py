@@ -83,6 +83,15 @@ def load_full_graph(input_dir: Path) -> dict | None:
     return None
 
 
+def load_show_vocab(input_dir: Path) -> dict | None:
+    """Load show_vocab.json with per-show vocabulary explanation data."""
+    path = input_dir / "show_vocab.json"
+    if path.exists():
+        with open(path) as f:
+            return json.load(f)
+    return None
+
+
 def load_full_layout(input_dir: Path) -> dict[str, list[float]] | None:
     """Load full_layout.json with precomputed node positions from graph.py."""
     path = input_dir / "full_layout.json"
@@ -352,6 +361,18 @@ def export_search_index_js(output_dir: Path, subgraphs: dict[int, nx.Graph]) -> 
         json.dump(entries, f, separators=(",", ":"))
         f.write(";\n")
     print(f"  Wrote {path} ({len(entries)} entries)", file=sys.stderr)
+
+
+def export_show_vocab_js(output_dir: Path, vocab_data: dict) -> None:
+    """Write show_vocab.js with per-show vocabulary explanation data."""
+    path = output_dir / "data" / "show_vocab.js"
+    with open(path, "w") as f:
+        f.write("var SHOW_VOCAB = ")
+        json.dump(vocab_data, f, separators=(",", ":"), ensure_ascii=False)
+        f.write(";\n")
+    n_shows = len(vocab_data.get("shows", {}))
+    size_mb = path.stat().st_size / (1024 * 1024)
+    print(f"  Wrote {path} ({n_shows} shows, {size_mb:.1f} MB)", file=sys.stderr)
 
 
 def export_pathfinding_js(output_dir: Path, full_graph: dict) -> None:
@@ -899,6 +920,63 @@ nav a:hover { color: #333; }
   display: inline-block; padding: 1px 5px;
   background: #e8e8e3; border-radius: 3px; font-size: 10px; color: #999;
 }
+
+/* Why-here popup */
+.why-btn {
+  display: block; width: 100%; padding: 8px; margin: 12px 0;
+  background: #f9f5f0; border: 1px solid #e0d8c8; border-radius: 4px;
+  color: #c0392b; font-size: 13px; cursor: pointer; font-weight: 600;
+  text-align: center;
+}
+.why-btn:hover { background: #f0ebe3; border-color: #c0392b; }
+
+#why-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5); z-index: 500;
+  display: flex; align-items: center; justify-content: center;
+}
+#why-popup {
+  background: #fff; border-radius: 8px; padding: 24px;
+  max-width: 540px; width: 90%; max-height: 80vh; overflow-y: auto;
+  position: relative; box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+#why-popup h2 { font-size: 18px; margin-bottom: 16px; padding-right: 30px; color: #333; }
+.why-section { margin-bottom: 20px; }
+.why-section-title {
+  font-size: 11px; font-weight: 700; color: #999; text-transform: uppercase;
+  letter-spacing: 0.5px; margin-bottom: 6px;
+}
+.why-desc { font-size: 12px; color: #888; margin-bottom: 8px; }
+.why-words { display: flex; flex-wrap: wrap; gap: 5px; }
+.why-word {
+  display: inline-block; padding: 3px 8px;
+  background: #f5f0e8; border: 1px solid #e0d8c8; border-radius: 3px;
+  font-size: 13px; color: #333;
+}
+.why-word-cluster { background: #e8f0e8; border-color: #c8d8c8; }
+.why-neighbor { margin-bottom: 12px; }
+.why-neighbor-header { font-size: 13px; margin-bottom: 5px; }
+.why-neighbor-title { font-weight: 600; color: #333; }
+.why-neighbor-sim { color: #999; font-size: 12px; font-family: monospace; }
+.why-neighbor-cluster { display: inline-block; padding: 1px 5px; background: #e8e8e3; border-radius: 3px; font-size: 10px; color: #999; margin-left: 4px; }
+.why-cluster-breakdown { margin-top: 8px; }
+.why-cluster-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
+.why-cluster-label { min-width: 140px; max-width: 180px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.why-cluster-current .why-cluster-label { color: #333; }
+.why-cluster-bar-bg { flex: 1; height: 8px; background: #eee; border-radius: 4px; overflow: hidden; min-width: 60px; }
+.why-cluster-bar-fill { height: 100%; background: #c0392b; border-radius: 4px; transition: width 0.3s; }
+.why-cluster-current .why-cluster-bar-fill { background: #27ae60; }
+.why-cluster-stats { color: #999; font-size: 11px; white-space: nowrap; font-family: monospace; }
+.why-expand {
+  display: block; background: none; border: none; color: #c0392b;
+  font-size: 12px; cursor: pointer; padding: 6px 0 0; font-weight: 600;
+}
+.why-expand:hover { text-decoration: underline; }
+.why-note {
+  font-size: 12px; color: #999; line-height: 1.6;
+  border-top: 1px solid #eee; padding-top: 12px;
+}
+.why-note strong { color: #666; }
 """
     css = css.replace("__BACKGROUND__", THEME["background"])
     path = output_dir / "assets" / "style.css"
@@ -1065,6 +1143,7 @@ def main() -> None:
     names = load_names(input_dir)
     full_graph = load_full_graph(input_dir)
     full_layout = load_full_layout(input_dir)
+    show_vocab = load_show_vocab(input_dir)
 
     print(
         f"Loaded cluster graph ({cg.number_of_nodes()} clusters) "
@@ -1102,6 +1181,16 @@ def main() -> None:
 
     # Search index
     export_search_index_js(output_dir, subgraphs)
+
+    # Show vocabulary explanation data
+    if show_vocab:
+        export_show_vocab_js(output_dir, show_vocab)
+    else:
+        print(
+            "  WARNING: show_vocab.json not found. 'Why here?' popup will not work.\n"
+            "  Re-run graph.py to generate it.",
+            file=sys.stderr,
+        )
 
     # Pathfinding data
     fullgraph_stats = None
