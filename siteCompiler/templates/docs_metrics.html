@@ -189,9 +189,9 @@
 <h3>Why are two shows connected?</h3>
 <p>
   Two shows have an edge between them if one appears in the other's top-20 most similar shows
-  (by cosine similarity of TF-IDF vectors, excluding proper nouns), with a minimum similarity
-  threshold of 0.01. The connection is always bidirectional: if A is in B's top-20, B is
-  connected to A even if A's top-20 doesn't include B.
+  (by cosine similarity of TF-IDF vectors, excluding proper nouns, numerals, symbols, interjections,
+  and OOV tokens), with a minimum similarity threshold of 0.01. The connection is always bidirectional:
+  if A is in B's top-20, B is connected to A even if A's top-20 doesn't include B.
 </p>
 
 <h3>Cluster-level edges</h3>
@@ -301,8 +301,10 @@
 
 <p>
   The total number of morphemes (word tokens) extracted from the show's subtitles by SudachiPy.
-  This includes all parts of speech (verbs, nouns, particles, etc.) except punctuation and whitespace.
-  Proper nouns are included in this count even though they are excluded from similarity computation.
+  This includes all parts of speech (verbs, nouns, particles, etc.) except supplementary symbols
+  (&#x88DC;&#x52A9;&#x8A18;&#x53F7;) and whitespace (&#x7A7A;&#x767D;), which are discarded during parsing.
+  Proper nouns, numerals, symbols, interjections, and OOV tokens are included in this count even
+  though they are excluded from similarity computation.
 </p>
 <p>
   Higher token counts generally mean more episodes or longer content, which produces more reliable

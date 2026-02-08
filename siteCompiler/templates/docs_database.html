@@ -49,6 +49,7 @@
       <div class="schema-col">dictionary_form</div>
       <div class="schema-col">part_of_speech</div>
       <div class="schema-col">reading</div>
+      <div class="schema-col">is_oov</div>
     </div>
   </div>
 </div>
@@ -128,6 +129,15 @@
       <td><code>reading</code></td>
       <td>TEXT</td>
       <td>Pronunciation in katakana (e.g., &#x30BF;&#x30D9;&#x30BF;). May be NULL.</td>
+    </tr>
+    <tr>
+      <td><code>is_oov</code></td>
+      <td>INTEGER NOT NULL DEFAULT 0</td>
+      <td>
+        Out-of-vocabulary flag. <code>1</code> if SudachiPy could not find this token in its
+        dictionary (e.g., garbled text, non-standard words, or rare slang). OOV morphemes are
+        excluded from similarity computation by the grapher.
+      </td>
     </tr>
   </tbody>
 </table>
@@ -215,8 +225,8 @@
       <td>~38.7 million</td>
     </tr>
     <tr>
-      <td>Proper noun morphemes (excluded from similarity)</td>
-      <td>~142,000</td>
+      <td>Morphemes excluded from similarity (proper nouns, numerals, symbols, interjections, OOV)</td>
+      <td>~142,000+</td>
     </tr>
     <tr>
       <td>Shows after quality filtering (in graph)</td>

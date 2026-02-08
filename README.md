@@ -57,6 +57,16 @@ Options:
 - `--min-kana-ratio 0.1` — minimum kana token ratio to accept a show
 - `--min-tokens 50` — minimum total tokens to accept a show
 
+**Filtering (parser-side):**
+
+The parser applies several layers of filtering before data reaches the database:
+
+1. **Non-Japanese filename filtering** — files with language codes in their name (`.en.`, `[eng]`, `.zh.`, `[ko]`, etc.) are skipped automatically to avoid ingesting translated subtitle tracks.
+2. **Line-level Japanese filtering** — only lines containing at least one Japanese character (hiragana, katakana, or kanji) are kept; pure-ASCII or other-language lines are dropped.
+3. **POS filtering at tokenization** — supplementary symbols (`補助記号`) and whitespace (`空白`) are discarded during tokenization and never stored.
+4. **OOV tracking** — morphemes not found in the SudachiPy dictionary are flagged with `is_oov = 1` in the database for downstream filtering.
+5. **Show-level validation** — a show is rejected entirely if it has fewer than `--min-tokens` total tokens (default 50) or its kana token ratio falls below `--min-kana-ratio` (default 10%). This catches non-Japanese or nearly-empty subtitle sets that slipped through earlier checks.
+
 ### Step 3 — Build graph
 
 Reads the SQLite database, computes TF-IDF vectors and cosine similarity, clusters shows with the Leiden algorithm, and exports GraphML files and JSON data.
@@ -70,8 +80,22 @@ Options:
 - `--threshold 0.01` — minimum cosine similarity to retain (default: 0.01)
 - `--resolution 1.0` — Leiden resolution; higher = more clusters (default: 1.0)
 - `--threads 4` — threads for similarity computation (default: 1)
+- `--min-tokens 500` — minimum total tokens to include a show (default: 500)
+- `--min-kana-ratio 0.1` — minimum kana token ratio to include a show (default: 0.1)
 - `--plot` — also generate PNG visualizations
 - `--names output/names.json` — JSON file mapping cluster IDs to human-readable names
+
+**Filtering (grapher-side):**
+
+The grapher applies its own filtering on top of the parser's, since it needs stricter thresholds for meaningful similarity:
+
+1. **Morpheme POS filtering** — the following part-of-speech categories are excluded from TF-IDF vectors:
+   - `名詞-固有名詞` (proper nouns) — character/place names that are too show-specific to reflect general vocabulary
+   - `名詞-数詞` (numerals) — numbers carry no language-learning signal
+   - `記号` (symbols/punctuation) — non-semantic tokens
+   - `感動詞` (interjections) — low-frequency emotional particles
+2. **OOV exclusion** — morphemes flagged `is_oov` by the parser (not in the SudachiPy dictionary) are excluded, removing garbled text and non-standard tokens.
+3. **Show-level quality filtering** — shows with fewer than `--min-tokens` total tokens (default 500, stricter than the parser's 50) or a kana ratio below `--min-kana-ratio` (default 10%) are dropped from the graph entirely.
 
 Output: `cluster_graph.graphml`, per-cluster `cluster_N.graphml` files, `full_graph.json`, and `full_layout.json`.
 

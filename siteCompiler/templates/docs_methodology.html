@@ -70,7 +70,12 @@
     </ul>
   </li>
   <li>
-    <strong>Filtering:</strong> Punctuation tokens (&#x88DC;&#x52A9;&#x8A18;&#x53F7;) and whitespace tokens (&#x7A7A;&#x767D;) are discarded.
+    <strong>POS filtering:</strong> Punctuation tokens (&#x88DC;&#x52A9;&#x8A18;&#x53F7;) and whitespace tokens (&#x7A7A;&#x767D;) are discarded during tokenization and never stored.
+  </li>
+  <li>
+    <strong>OOV tracking:</strong> Tokens that SudachiPy cannot find in its dictionary are flagged
+    with <code>is_oov = 1</code> in the database. These are stored (so the data is complete) but
+    excluded from similarity computation by the grapher downstream.
   </li>
   <li>
     <strong>Validation:</strong> A show must have at least 50 tokens and at least 10% of tokens must
@@ -92,21 +97,86 @@
 
 <p>This is the core of the system. It transforms the raw morpheme counts into a similarity graph.</p>
 
-<h3>3a. Proper noun filtering</h3>
+<h3>3a. Morpheme filtering</h3>
 <p>
-  Proper nouns (&#x540D;&#x8A5E;-&#x56FA;&#x6709;&#x540D;&#x8A5E;) are excluded from the similarity computation entirely.
-  Character names, place names, and other proper nouns would create false connections between shows
-  that happen to share character names but have completely different vocabulary. For example, multiple
-  unrelated shows might have a character named &#x592A;&#x90CE; (Tarou) &mdash; this shouldn't make them similar.
-  However, proper nouns are still counted toward total token counts for metadata.
+  Several categories of morphemes are excluded from the TF-IDF similarity computation. They are still
+  counted toward total token counts for metadata (node size, token display) but do not influence which
+  shows are considered similar.
+</p>
+
+<table class="docs-table">
+  <thead>
+    <tr>
+      <th>Category</th>
+      <th>POS Prefix</th>
+      <th>Why excluded</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Proper nouns</td>
+      <td>&#x540D;&#x8A5E;-&#x56FA;&#x6709;&#x540D;&#x8A5E;</td>
+      <td>
+        Character and place names create false connections between unrelated shows.
+        Multiple shows might share a character named &#x592A;&#x90CE; (Tarou) without having
+        similar vocabulary.
+      </td>
+    </tr>
+    <tr>
+      <td>Numerals</td>
+      <td>&#x540D;&#x8A5E;-&#x6570;&#x8A5E;</td>
+      <td>
+        Numbers carry no language-learning signal and appear uniformly across all content types.
+      </td>
+    </tr>
+    <tr>
+      <td>Symbols</td>
+      <td>&#x8A18;&#x53F7;</td>
+      <td>
+        Punctuation and symbols are non-semantic artifacts of subtitle formatting.
+      </td>
+    </tr>
+    <tr>
+      <td>Interjections</td>
+      <td>&#x611F;&#x52D5;&#x8A5E;</td>
+      <td>
+        Emotional particles (e.g., &#x3048;&#x3063;, &#x3042;&#x3063;) are too low-frequency
+        and inconsistently transcribed to provide a reliable similarity signal.
+      </td>
+    </tr>
+    <tr>
+      <td>Out-of-vocabulary (OOV)</td>
+      <td><code>is_oov = 1</code></td>
+      <td>
+        Tokens that SudachiPy could not find in its dictionary &mdash; typically garbled text,
+        OCR errors, or non-standard tokens. These are flagged during parsing and excluded here.
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  Note that the parser already filters supplementary symbols (&#x88DC;&#x52A9;&#x8A18;&#x53F7;) and whitespace
+  (&#x7A7A;&#x767D;) during tokenization, so those never reach the database at all. The grapher's filtering
+  above operates on the remaining morphemes stored in the database.
 </p>
 
 <h3>3b. Quality gate</h3>
 <p>
-  Shows with fewer than 500 total tokens are removed from the graph. This is stricter than the
-  parser's 50-token minimum &mdash; the parser stores everything, but the grapher only includes shows
-  with enough text to produce meaningful similarity scores.
+  Shows must pass two checks to be included in the graph:
 </p>
+<ul>
+  <li>
+    <strong>Minimum token count:</strong> At least 500 total tokens (stricter than the parser's
+    50-token minimum). The parser stores everything, but the grapher needs enough text to produce
+    meaningful similarity scores.
+  </li>
+  <li>
+    <strong>Minimum kana ratio:</strong> At least 10% of tokens must contain kana
+    (hiragana or katakana). This catches non-Japanese content that slipped through the parser,
+    since Chinese text shares kanji but never uses kana.
+  </li>
+</ul>
 
 <h3>3c. TF-IDF transformation</h3>
 <p>

@@ -11,7 +11,8 @@ Build a graph/similarity database of Japanese TV shows and movies based on morph
 | 0. Source data | `subs/kitsunekko-mirror-main/` (13 GB raw .srt/.ass/.ssa) | Done |
 | 1. Minify subtitles | `tools/subMinifier/minify.py` → `subs/minSubs/` (5.3 GB clean .txt) | Done |
 | 2. Parse & insert into DB | `tools/subParser/parse.py` → `subs/japaneseShowGraph.db` | **In progress** |
-| 3. TF-IDF + similarity + graph | `tools/grapher/graph.py` → `output/*.graphml` | Done |
+| 3. TF-IDF + similarity + graph | `tools/grapher/graph.py` → `output/*.graphml` + JSON | Done |
+| 4. Compile website | `siteCompiler/compile.py` → `www/` (interactive Sigma.js site) | Available |
 
 ## Directory Structure
 
@@ -32,9 +33,16 @@ japaneseShowGraph/
 │   ├── subMinifier/minify.py           # step 1: strip formatting from .srt/.ass/.ssa
 │   ├── subParser/parse.py              # step 2: SudachiPy tokenization → SQLite
 │   └── grapher/graph.py                # step 3: TF-IDF → similarity → clusters → GraphML
-├── output/                             # GraphML graph files for Gephi
-│   ├── cluster_graph.graphml              # domain-level graph (clusters as nodes)
-│   └── cluster_N.graphml                  # per-cluster show graphs
+├── siteCompiler/
+│   ├── compile.py                        # step 4: GraphML → interactive HTML site
+│   └── templates/                        # Jinja2 HTML templates
+├── output/                               # GraphML graph files + JSON data
+│   ├── cluster_graph.graphml             # domain-level graph (clusters as nodes)
+│   ├── cluster_N.graphml                 # per-cluster show graphs (N = 0..16)
+│   ├── full_graph.json                   # complete adjacency with all edges + metadata
+│   ├── full_layout.json                  # precomputed DrL layout positions
+│   └── names.json                        # cluster ID → human-readable name
+├── www/                                  # (gitignored) generated website
 └── STATE.md
 ```
 
@@ -71,6 +79,7 @@ CREATE TABLE morphemes (
     dictionary_form TEXT NOT NULL,
     part_of_speech TEXT NOT NULL,
     reading TEXT,
+    is_oov INTEGER NOT NULL DEFAULT 0,  -- 1 if not in SudachiPy dictionary
     UNIQUE(surface_form, dictionary_form, part_of_speech, reading)
 );
 
@@ -97,6 +106,20 @@ CREATE TABLE show_morphemes (
 CREATE INDEX idx_show_morphemes_morpheme ON show_morphemes(morpheme_id);
 ```
 
+### Columns
+
+| Table | Column | Description |
+|-------|--------|-------------|
+| `morphemes` | `surface_form` | Token as it appears in text |
+| `morphemes` | `dictionary_form` | Base/lemma form |
+| `morphemes` | `part_of_speech` | Full POS tag (e.g. `名詞-普通名詞-一般`) |
+| `morphemes` | `reading` | Katakana reading from SudachiPy |
+| `morphemes` | `is_oov` | `1` if the token was not found in the SudachiPy dictionary (out-of-vocabulary) |
+| `shows` | `title` | Show directory name from kitsunekko |
+| `shows` | `category` | One of `anime_movie`, `anime_tv`, `drama_movie`, `drama_tv`, `unsorted` |
+| `shows` | `episode_count` | Number of subtitle files found for this show |
+| `show_morphemes` | `count` | How many times this morpheme appeared across all episodes of the show |
+
 ## Tool Reference
 
 ### `tools/subMinifier/minify.py`
@@ -121,6 +144,16 @@ python3.12 tools/subParser/parse.py subs/minSubs/ -o subs/japaneseShowGraph.db -
 - **`--mode A/B/C`** — SudachiPy segmentation mode (default: B, balanced)
 - **`--resume`** — skip shows already in the DB
 - **`--limit N`** — process only the first N shows
+- **`--min-kana-ratio F`** — minimum kana token ratio to accept a show (default: 0.1)
+- **`--min-tokens N`** — minimum total tokens to accept a show (default: 50)
+
+**Filtering pipeline:**
+
+1. Non-Japanese filename filtering — skips files with language codes (`.en.`, `[eng]`, `.zh.`, etc.)
+2. Line-level — drops lines without Japanese characters (hiragana/katakana/kanji)
+3. POS at tokenization — discards `補助記号` (supplementary symbols) and `空白` (whitespace)
+4. OOV flagging — marks morphemes not in the SudachiPy dictionary (`is_oov = 1`)
+5. Show-level validation — rejects shows below kana ratio or token count thresholds
 
 ### `tools/grapher/graph.py`
 
@@ -131,14 +164,25 @@ python3.12 tools/grapher/graph.py subs/japaneseShowGraph.db -o output/          
 python3.12 tools/grapher/graph.py subs/japaneseShowGraph.db -o output/ --topk 20 --threshold 0.01  # tune similarity sparsity
 python3.12 tools/grapher/graph.py subs/japaneseShowGraph.db -o output/ --resolution 1.0            # tune cluster granularity
 python3.12 tools/grapher/graph.py subs/japaneseShowGraph.db -o output/ --threads 4                 # parallel similarity
+python3.12 tools/grapher/graph.py subs/japaneseShowGraph.db -o output/ --names output/names.json   # custom cluster names
 ```
 
 - **`--topk N`** — keep top-N most similar neighbours per show (default: 20)
 - **`--threshold F`** — minimum cosine similarity to retain (default: 0.01)
 - **`--resolution F`** — Leiden resolution; higher = more clusters (default: 1.0)
 - **`--threads N`** — threads for sparse matrix multiplication (default: 1)
+- **`--min-tokens N`** — minimum total tokens to include a show (default: 500)
+- **`--min-kana-ratio F`** — minimum kana token ratio to include a show (default: 0.1)
+- **`--plot`** — generate PNG visualizations alongside GraphML files
+- **`--names PATH`** — JSON file mapping cluster IDs to human-readable names
 
-Output: `cluster_graph.graphml` (domain-level) + `cluster_N.graphml` (per-cluster show graphs)
+**Filtering pipeline (on top of parser-side filtering):**
+
+1. Morpheme POS exclusion — `名詞-固有名詞` (proper nouns), `名詞-数詞` (numerals), `記号` (symbols), `感動詞` (interjections)
+2. OOV exclusion — morphemes flagged `is_oov` by the parser are dropped from TF-IDF vectors
+3. Show-level quality gate — stricter than the parser: `--min-tokens 500` (vs parser's 50), `--min-kana-ratio 0.1`
+
+Output: `cluster_graph.graphml` (domain-level), `cluster_N.graphml` (per-cluster show graphs), `full_graph.json` (complete adjacency), `full_layout.json` (precomputed 2D positions), optionally `names.json` (cluster labels)
 
 ## Dependencies
 
