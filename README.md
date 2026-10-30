@@ -99,6 +99,19 @@ The grapher applies its own filtering on top of the parser's, since it needs str
 
 Output: `cluster_graph.graphml`, per-cluster `cluster_N.graphml` files, `full_graph.json`, and `full_layout.json`.
 
+### Step 3b — Export frequency list (optional)
+
+Writes a corpus-wide word frequency list as TSV. Uses the same morpheme filtering as the grapher and merges conjugated forms by lemma and lexical part of speech.
+
+```sh
+python3.12 tools/freqList/export_freq.py subs/japaneseShowGraph.db -o data/frequency_top20k.tsv
+```
+
+Options:
+- `--top 20000` — number of entries to keep (default: 20000)
+
+The committed `data/frequency_top20k.tsv` has columns `rank`, `lemma`, `reading`, `pos`, `count`, `shows` (number of shows the word appears in), and `per_million` (occurrences per million filtered tokens).
+
 ### Step 4 — Compile website
 
 Generates a static HTML site with interactive Sigma.js graph visualizations, search, and pathfinding. Works via `file://` protocol (no server needed).
@@ -116,10 +129,13 @@ japaneseShowGraph/
 ├── tools/
 │   ├── subMinifier/minify.py     # Step 1: strip formatting from subtitles
 │   ├── subParser/parse.py        # Step 2: SudachiPy tokenization -> SQLite
-│   └── grapher/graph.py          # Step 3: TF-IDF -> similarity -> clusters -> GraphML
+│   ├── grapher/graph.py          # Step 3: TF-IDF -> similarity -> clusters -> GraphML
+│   └── freqList/export_freq.py   # Step 3b: corpus-wide word frequency list -> TSV
 ├── siteCompiler/
 │   ├── compile.py                # Step 4: GraphML -> interactive HTML site
 │   └── templates/                # Jinja2 HTML templates
+├── data/
+│   └── frequency_top20k.tsv      # top 20k words by corpus frequency
 ├── subs/                         # (gitignored) subtitle data and database
 ├── output/                       # (gitignored) GraphML and JSON graph files
 └── www/                          # (gitignored) generated website
